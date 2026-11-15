@@ -174,6 +174,10 @@
     this.signingIn = false;
     this.fromScript = false;
     this.askedAgain = false;
+    // Signing in without a token from the site (embed-login.js).
+    this.login = null;
+    this.hasLogin = !!window.QQplayLogin &&
+      (root.hasAttribute("data-login-start-url") || root.hasAttribute("data-login-declared-url"));
     this.chatVersion = -1;
     this.pendingReactions = {};
     this.canReact = false;
@@ -956,6 +960,7 @@
     if (!this.session || response.headers.get("X-QQplay-Session") !== "expired") return;
     this.session = "";
     this.showWho(null);
+    if (this.login) this.login.expired();
     tellParent({ type: "qqplay:token-needed" });
   };
 
@@ -964,9 +969,14 @@
     var top = window.parent === window;
     if (this.awaiting) each(this.root, "[data-chat-when]", function (node) { node.hidden = true; });
     window.addEventListener("message", function (event) {
-      if (event.source !== window.parent || !event.data || event.data.type !== "qqplay:token") return;
-      self.fromScript = true;
-      self.signIn(String(event.data.token || ""), event.origin, false);
+      if (event.source !== window.parent || !event.data) return;
+      if (event.data.type === "qqplay:token") {
+        self.fromScript = true;
+        self.signIn(String(event.data.token || ""), event.origin, false);
+      } else if (event.data.type === "qqplay:identity" && self.login) {
+        // Who the platform's page says is there (not proof: see the server).
+        self.login.declare(event.data.email, event.data.name, event.origin, false);
+      }
     });
     // A plain frame may carry the token in its address instead, and so may
     // the address opened by itself in the school's app. It leaves the
@@ -982,7 +992,7 @@
     }
     if (!top) {
       tellParent({ type: "qqplay:ready" });
-      if (!match && this.awaiting) {
+      if (!match && this.awaiting && !this.hasLogin) {
         // Nobody answered with a token: a plain frame loaded again.
         window.setTimeout(function () {
           if (self.awaiting && !self.session && !self.signingIn && !self.fromScript) {
@@ -990,9 +1000,40 @@
           }
         }, 8000);
       }
-    } else if (!match) {
+    } else if (!match && !this.hasLogin) {
       this.signInFailed(gettext("Open this live from your school's site."), "frame");
     }
+    if (this.hasLogin) this.bootLogin(top, !!match);
+  };
+
+  /* People who sign in by themselves: with a code by e-mail, or as whoever
+     the platform's page says is there (embed-login.js). */
+  LivePage.prototype.bootLogin = function (top, hasToken) {
+    var self = this;
+    this.login = window.QQplayLogin.boot({
+      root: this.root,
+      // A site that signs its people in with tokens goes first.
+      delay: hasToken || !top ? 1500 : 0,
+      busy: function () { return self.signingIn || !!self.session; },
+      onSession: function (session, user) { self.adopt(session, user); },
+      onProblem: function (error) { self.signInFailed(error.message, error.code || "refused"); },
+    });
+    var params = new URLSearchParams(window.location.search);
+    var email = params.get("email") || params.get("cuser_email") || "";
+    if (email && !hasToken) {
+      this.login.declare(email, params.get("name") || params.get("cuser_name") || "", top ? "" : parentOrigin(), top);
+    }
+  };
+
+  LivePage.prototype.adopt = function (session, user) {
+    this.signingIn = false;
+    this.askedAgain = false;
+    this.session = session;
+    if (this.login) this.login.signedIn();
+    this.showWho(user);
+    this.resetChat();
+    tellParent({ type: "qqplay:signed-in", name: (user && user.name) || "" });
+    this.pollNow();
   };
 
   LivePage.prototype.signIn = function (token, origin, direct, attempt) {
@@ -1018,15 +1059,7 @@
           return payload;
         });
       })
-      .then(function (payload) {
-        self.signingIn = false;
-        self.askedAgain = false;
-        self.session = payload.session;
-        self.showWho(payload.user);
-        self.resetChat();
-        tellParent({ type: "qqplay:signed-in", name: (payload.user && payload.user.name) || "" });
-        self.pollNow();
-      })
+      .then(function (payload) { self.adopt(payload.session, payload.user); })
       .catch(function (error) {
         var code = error.code || "network";
         // A whole class arriving at once, or a connection that blinked: it

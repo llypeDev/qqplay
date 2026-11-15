@@ -1,0 +1,14 @@
+{% load i18n %}{# Signing in with a code by e-mail, inside a frame (static/js/embed-login.js shows it when it is the way in). #}
+<form class="email-login" data-email-login data-step="email" hidden novalidate>
+  <p class="email-login-text">{% blocktranslate with site=integration.name %}Enter the e-mail you use at {{ site }}.{% endblocktranslate %}</p>
+  <div class="email-login-row" data-login-step="email">
+    <input class="input" type="email" name="email" autocomplete="email" inputmode="email" maxlength="254" placeholder="{% translate 'you@email.com' %}" aria-label="{% translate 'Your e-mail' %}">
+    <button class="btn btn-primary btn-sm" type="submit">{% translate "Send me a code" %}</button>
+  </div>
+  <div class="email-login-row" data-login-step="code" hidden>
+    <input class="input mono" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="000000" aria-label="{% translate 'The code from the e-mail' %}">
+    <button class="btn btn-primary btn-sm" type="submit">{% translate "Sign in" %}</button>
+    <button class="btn btn-ghost btn-sm" type="button" data-login-back>{% translate "Another e-mail" %}</button>
+  </div>
+  <p class="email-login-note" data-login-note role="status" hidden></p>
+</form>

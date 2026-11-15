@@ -30,6 +30,7 @@
   var signingIn = false;
   var fromScript = false;
   var askedAgain = false;
+  var login = null;
   var pollTimer = 0;
   var POLL = 20000;
 
@@ -64,6 +65,7 @@
     if (session && response.headers.get("X-QQplay-Session") === "expired") {
       session = "";
       showWho(null);
+      if (login) login.expired();
       tellParent({ type: "qqplay:token-needed" });
     }
   }
@@ -158,6 +160,32 @@
     }
   }
 
+  /* Someone is signed in, by a token of the site or by themselves: show who,
+     open a private video to them, and bring the comments as they see them. */
+  function adopt(newSession, user) {
+    signingIn = false;
+    askedAgain = false;
+    session = newSession;
+    if (login) login.signedIn();
+    showWho(user);
+    tellParent({ type: "qqplay:signed-in", name: (user && user.name) || "" });
+    var opened = Promise.resolve();
+    if (root.hasAttribute("data-awaiting") && infoUrl) {
+      opened = fetch(infoUrl, { headers: headers() })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (info) {
+          if (info) {
+            root.removeAttribute("data-awaiting");
+            playPrivate(info);
+          } else {
+            // Signed in, but the video is a recording for other classes.
+            signInFailed(gettext("If you are in one of them, ask your school."), "classes");
+          }
+        });
+    }
+    return opened.then(function () { if (session) load(); });
+  }
+
   function signIn(token, origin, direct, attempt) {
     if (!token || !sessionUrl || (signingIn && !attempt)) return;
     attempt = attempt || 0;
@@ -178,27 +206,7 @@
           return payload;
         });
       })
-      .then(function (payload) {
-        signingIn = false;
-        askedAgain = false;
-        session = payload.session;
-        showWho(payload.user);
-        tellParent({ type: "qqplay:signed-in", name: (payload.user && payload.user.name) || "" });
-        if (root.hasAttribute("data-awaiting") && infoUrl) {
-          return fetch(infoUrl, { headers: headers() })
-            .then(function (response) { return response.ok ? response.json() : null; })
-            .then(function (info) {
-              if (info) {
-                root.removeAttribute("data-awaiting");
-                playPrivate(info);
-              } else {
-                // Signed in, but the video is a recording for other classes.
-                signInFailed(gettext("If you are in one of them, ask your school."), "classes");
-              }
-            });
-        }
-      })
-      .then(function () { if (session) load(); })
+      .then(function (payload) { return adopt(payload.session, payload.user); })
       .catch(function (error) {
         var code = error.code || "network";
         // Many people arriving at once, or a connection that blinked: it
@@ -224,9 +232,13 @@
   var top = window.parent === window;
   if (school && sessionUrl) {
     window.addEventListener("message", function (event) {
-      if (event.source !== window.parent || !event.data || event.data.type !== "qqplay:token") return;
-      fromScript = true;
-      signIn(String(event.data.token || ""), event.origin, false);
+      if (event.source !== window.parent || !event.data) return;
+      if (event.data.type === "qqplay:token") {
+        fromScript = true;
+        signIn(String(event.data.token || ""), event.origin, false);
+      } else if (event.data.type === "qqplay:identity" && login) {
+        login.declare(event.data.email, event.data.name, event.origin, false);
+      }
     });
     // The token may come in the address instead (a plain frame, or the
     // address opened by itself in the school's app); it leaves it at once.
@@ -240,6 +252,21 @@
       signIn(given, top ? "" : parentOrigin(), top);
     }
     if (!top) tellParent({ type: "qqplay:ready" });
+    // People who sign in by themselves (embed-login.js).
+    if (window.QQplayLogin && (root.hasAttribute("data-login-start-url") || root.hasAttribute("data-login-declared-url"))) {
+      login = window.QQplayLogin.boot({
+        root: root,
+        delay: match || !top ? 1500 : 0,
+        busy: function () { return signingIn || !!session; },
+        onSession: function (newSession, user) { adopt(newSession, user); },
+        onProblem: function (error) { signInFailed(error.message, error.code || "refused"); },
+      });
+      var params = new URLSearchParams(window.location.search);
+      var declared = params.get("email") || params.get("cuser_email") || "";
+      if (declared && !match) {
+        login.declare(declared, params.get("name") || params.get("cuser_name") || "", top ? "" : parentOrigin(), top);
+      }
+    }
   } else if (!top) {
     // A frame with no school still tells the site's script it is showing.
     tellParent({ type: "qqplay:loaded" });

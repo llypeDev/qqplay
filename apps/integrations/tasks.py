@@ -60,3 +60,12 @@ def deliver_webhook(self, delivery_id: int) -> str:
     if not delivery.ok and delivery.event != "test" and self.request.retries < len(WEBHOOK_BACKOFF):
         raise self.retry(countdown=WEBHOOK_BACKOFF[self.request.retries])
     return "delivered" if delivery.ok else "failed"
+
+
+@shared_task(name="integrations.send_login_code", ignore_result=True, autoretry_for=(OSError,), retry_backoff=5,
+             max_retries=3)
+def send_login_code(email: str, code: str, school: str, language: str) -> None:
+    """The code someone asked for to sign in by e-mail (login.py)."""
+    from . import login
+
+    login.send(email, code, school, language)

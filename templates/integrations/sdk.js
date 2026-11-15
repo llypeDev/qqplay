@@ -15,6 +15,10 @@
  * data-school        your integration's key (sch_...). Only needed when the
  *                    token comes later (QQplay.setToken) or does not name the
  *                    integration in its header (kid)
+ * data-email         for platforms that sign no tokens: the e-mail of the
+ * data-name          person signed in, as the platform's page writes it
+ *                    (a merge tag). Taken only when the integration trusts
+ *                    it, for enrolled students; needs data-school
  * data-theme         dark or light (the person's system setting otherwise)
  * data-lang          the interface language: pt-br or en (QQplay's own
  *                    otherwise)
@@ -29,7 +33,7 @@
  * picked up by themselves, and the ones taken away are cleaned up.
  *
  * From your own script: QQplay.mount(element, {live, video, layout, token,
- * tokenUrl, school, theme, lang, height}), QQplay.setToken(element, token)
+ * tokenUrl, school, email, name, theme, lang, height}), QQplay.setToken(element, token)
  * and QQplay.unmount(element). The element receives these events:
  *   qqplay:signed-in   {name}             the person may write now
  *   qqplay:signed-out                     their session is over
@@ -99,6 +103,8 @@
     this.lang = /^[a-zA-Z-]{2,12}$/.test(options.lang || "") ? String(options.lang).toLowerCase() : "";
     this.height = Number(options.height) || 600;
     this.school = String(options.school || "");
+    this.email = String(options.email || "");
+    this.name = String(options.name || "");
     this.lazy = options.loading === "lazy";
     this.token = options.token || "";
     this.tokenUrl = options.tokenUrl || "";
@@ -242,8 +248,13 @@
   };
 
   Widget.prototype.send = function () {
-    if (!this.frame || !this.frame.contentWindow || !this.ready || !this.token) return;
-    this.frame.contentWindow.postMessage({ type: "qqplay:token", token: this.token }, ORIGIN);
+    if (!this.frame || !this.frame.contentWindow || !this.ready) return;
+    if (this.token) {
+      this.frame.contentWindow.postMessage({ type: "qqplay:token", token: this.token }, ORIGIN);
+    } else if (this.email) {
+      // No token: the page's word for who is there.
+      this.frame.contentWindow.postMessage({ type: "qqplay:identity", email: this.email, name: this.name }, ORIGIN);
+    }
   };
 
   Widget.prototype.setToken = function (token) {
@@ -312,6 +323,8 @@
       lang: el.getAttribute("data-lang"),
       height: el.getAttribute("data-height"),
       school: el.getAttribute("data-school"),
+      email: el.getAttribute("data-email"),
+      name: el.getAttribute("data-name"),
       loading: el.getAttribute("data-loading"),
       token: el.getAttribute("data-token"),
       tokenUrl: el.getAttribute("data-token-url"),

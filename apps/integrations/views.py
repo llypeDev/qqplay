@@ -9,11 +9,13 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils import timezone
+from django.utils.http import urlencode
+from django.utils import timezone, translation
 from django.utils.dateparse import parse_datetime
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
@@ -21,12 +23,13 @@ from django.views.decorators.cache import cache_control
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from apps.core.embedding import missing as embed_missing
 from apps.core.templatetags.akon import avatar
 from apps.live.models import Live
 from apps.rbac import permissions as policy
 
-from . import diagnostics, identities, sessions, tokens, webhooks
-from .models import Integration, WebhookDelivery, normalize_origin
+from . import diagnostics, enrolments, hooks, identities, login, sessions, tokens, webhooks
+from .models import Enrolment, Integration, WebhookDelivery, new_hook_secret, normalize_origin
 
 #: Sign-ins one address may attempt per minute.
 #: Refused sign-ins from one address in a minute before it has to wait: what
@@ -34,8 +37,12 @@ from .models import Integration, WebhookDelivery, normalize_origin
 REFUSED_BURST = 40
 #: Sign-ins of one person in a minute: reloads and a few tabs, not a loop.
 PERSON_BURST = 20
+#: Sign-in codes asked for from one address in a minute (a class in one room).
+CODES_PER_ADDRESS = 120
 #: People listed in the studio at a time.
 PEOPLE_PAGE = 50
+#: The largest spreadsheet an import takes.
+IMPORT_BYTES = 2 * 1024 * 1024
 
 
 def _origin_of(request) -> str:
@@ -110,33 +117,26 @@ def session(request):
     if _one_more(f"integrations:signin:person:{integration.pk}:{who}", PERSON_BURST):
         return _slow_down()
 
-    origin = normalize_origin(said)
-    if integration.origin_list:
-        direct = data.get("direct") is True and not origin
-        allowed = (
-            (direct and integration.allow_direct)
-            or (origin and (origin == _origin_of(request) or integration.allows_origin(origin)))
-        )
-        if not allowed:
-            if direct:
-                detail = _("Opening this address by itself is turned off for the integration: its creator can allow it in the integration's settings.")
-            elif not origin:
-                detail = _("The page did not say which site it is on. Use the QQplay script, or do not set a no-referrer policy on the frame.")
-            else:
-                detail = _("This site is not allowed to use the integration: add %(origin)s to its sites.") % {"origin": origin}
-            _one_more(refused, REFUSED_BURST)
-            diagnostics.record(integration, "origin", detail, said or ("direct" if direct else ""))
-            return JsonResponse({"detail": detail, "code": "origin"}, status=403)
+    allowed, detail, said = _site_allowed(integration, request, data)
+    if not allowed:
+        _one_more(refused, REFUSED_BURST)
+        diagnostics.record(integration, "origin", detail, said)
+        return JsonResponse({"detail": detail, "code": "origin"}, status=403)
 
-    identity = identities.sync(person)
+    return _signed_in(integration, identities.sync(person), said, secret_version=person.secret_version)
+
+
+def _signed_in(integration, identity, said="", *, secret_version="", method="token", lifetime=sessions.LIFETIME):
+    """The answer every way of signing in ends with: the session, how long it
+    lasts and who the person is, for the frame to show."""
     if identity.is_blocked or not identity.user.is_active:
         diagnostics.record(integration, "blocked", _("This account is blocked."), said)
         return JsonResponse({"detail": _("This account is blocked."), "code": "blocked"}, status=403)
     Integration.objects.filter(pk=integration.pk).update(last_used_at=timezone.now())
     return JsonResponse(
         {
-            "session": sessions.issue(identity, person.secret_version),
-            "expires_in": sessions.LIFETIME,
+            "session": sessions.issue(identity, secret_version, method, lifetime),
+            "expires_in": lifetime,
             "user": {
                 "name": identity.user.get_short_name(),
                 "avatar": str(avatar(identity.user, "sm")),
@@ -144,6 +144,141 @@ def session(request):
             },
         }
     )
+
+
+def _site_allowed(integration, request, data) -> tuple[bool, str, str]:
+    """Whether the page a frame is on may sign people in: (yes, why not, the
+    origin it said)."""
+    said = str(data.get("origin") or "")[:200]
+    origin = normalize_origin(said)
+    if not integration.origin_list:
+        return True, "", said
+    direct = data.get("direct") is True and not origin
+    if (direct and integration.allow_direct) or (
+        origin and (origin == _origin_of(request) or integration.allows_origin(origin))
+    ):
+        return True, "", said
+    if direct:
+        detail = _("Opening this address by itself is turned off for the integration: its creator can allow it in the integration's settings.")
+    elif not origin:
+        detail = _("The page did not say which site it is on. Use the QQplay script, or do not set a no-referrer policy on the frame.")
+    else:
+        detail = _("This site is not allowed to use the integration: add %(origin)s to its sites.") % {"origin": origin}
+    return False, detail, said or ("direct" if direct else "")
+
+
+def _body(request) -> dict:
+    try:
+        data = json.loads(request.body or b"{}")
+    except ValueError:
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _school(data):
+    """The integration a frame names by its key, if it is on."""
+    key = str(data.get("school") or "")[:40]
+    return Integration.objects.filter(key=key, is_active=True).first() if key else None
+
+
+def _not_here():
+    return JsonResponse({"detail": _("This way of signing in is not available here."), "code": "off"}, status=404)
+
+
+def _enrolled(integration, enrolment, said, method, lifetime):
+    """Sign an enrolled person in: their account is made or brought up to
+    date from the enrolment, and tied to it."""
+    identity = identities.sync(enrolments.person_for(enrolment))
+    if enrolment.identity_id != identity.pk:
+        try:
+            with transaction.atomic():
+                Enrolment.objects.filter(pk=enrolment.pk).update(identity=identity)
+        except IntegrityError:  # the account is another enrolment's already
+            pass
+    return _signed_in(integration, identity, said, method=method, lifetime=lifetime)
+
+
+@csrf_exempt
+@sessions.open_to_any_origin
+@require_POST
+def login_start(request):
+    """Send a sign-in code to an e-mail, if it is enrolled (login.py).
+
+    Body (JSON): {"school": "<the integration's key>", "email": "..."}
+    The answer is the same whether the e-mail is on the list or not.
+    """
+    data = _body(request)
+    integration = _school(data)
+    if integration is None or not integration.email_login:
+        return _not_here()
+    if _one_more(f"integrations:code:address:{client_address(request)}", CODES_PER_ADDRESS):
+        return _slow_down()
+    try:
+        login.start(integration, data.get("email"), translation.get_language())
+    except login.LoginError as error:
+        return JsonResponse({"detail": str(error), "code": error.code}, status=error.status)
+    return JsonResponse({"sent": True, "minutes": login.CODE_MINUTES})
+
+
+@csrf_exempt
+@sessions.open_to_any_origin
+@require_POST
+def login_verify(request):
+    """Trade the code for a session.
+
+    Body (JSON): {"school": "...", "email": "...", "code": "123456"}
+    """
+    data = _body(request)
+    integration = _school(data)
+    if integration is None or not integration.email_login:
+        return _not_here()
+    refused = f"integrations:signin:refused:{client_address(request)}"
+    if (cache.get(refused) or 0) >= REFUSED_BURST:
+        return _slow_down()
+    try:
+        enrolment = login.verify(integration, data.get("email"), data.get("code"))
+    except login.LoginError as error:
+        _one_more(refused, REFUSED_BURST)
+        return JsonResponse({"detail": str(error), "code": error.code}, status=error.status)
+    return _enrolled(integration, enrolment, "", "email", sessions.EMAIL_LIFETIME)
+
+
+@csrf_exempt
+@sessions.open_to_any_origin
+@require_POST
+def login_declared(request):
+    """Sign in whoever the platform's page says is there, without proof: the
+    e-mail a members area writes into the embed code. Taken only when the
+    integration allows it, from a listed site, for an enrolled student; a
+    teacher is asked for a code, since the page's word is anyone's to edit.
+
+    Body (JSON): {"school": "...", "email": "...", "name": "...", "origin": "..."}
+    """
+    data = _body(request)
+    integration = _school(data)
+    if integration is None or not integration.declared_login:
+        return _not_here()
+    refused = f"integrations:signin:refused:{client_address(request)}"
+    if (cache.get(refused) or 0) >= REFUSED_BURST:
+        return _slow_down()
+    allowed, detail, said = _site_allowed(integration, request, data)
+    if not allowed:
+        _one_more(refused, REFUSED_BURST)
+        diagnostics.record(integration, "origin", detail, said)
+        return JsonResponse({"detail": detail, "code": "origin"}, status=403)
+    enrolment = enrolments.find(integration, data.get("email"))
+    if enrolment is None or not enrolment.is_active:
+        _one_more(refused, REFUSED_BURST)
+        detail = _("This e-mail is not enrolled here.")
+        diagnostics.record(integration, "enrolment", detail, said)
+        return JsonResponse({"detail": detail, "code": "enrolment"}, status=403)
+    if enrolment.is_moderator:
+        return JsonResponse({"detail": _("Teachers sign in with a code sent to their e-mail."), "code": "code"}, status=403)
+    name = str(data.get("name") or "").strip()[:120]
+    if name and not enrolment.name:
+        enrolment.name = name
+        enrolment.save(update_fields=["name", "updated_at"])
+    return _enrolled(integration, enrolment, said, "declared", sessions.LIFETIME)
 
 
 @cache_control(max_age=3600, public=True)
@@ -258,6 +393,17 @@ def studio_detail(request, pk):
         shown = PEOPLE_PAGE
     people_found = found.count()
     people = found[:shown]
+
+    # The enrolments, for schools whose students sign in by themselves.
+    enrolled = integration.enrolments.all()
+    enrolment_search = (request.GET.get("eq") or "").strip()[:80]
+    if enrolment_search:
+        enrolled = enrolled.filter(Q(email__icontains=enrolment_search) | Q(name__icontains=enrolment_search))
+    try:
+        enrolled_shown = min(500, max(PEOPLE_PAGE, int(request.GET.get("enrolled", PEOPLE_PAGE))))
+    except (TypeError, ValueError):
+        enrolled_shown = PEOPLE_PAGE
+    enrolled_found = enrolled.count()
     return render(
         request,
         "integrations/detail.html",
@@ -273,6 +419,19 @@ def studio_detail(request, pk):
             "people_found": people_found,
             "people_more": shown + PEOPLE_PAGE if people_found > shown else 0,
             "search": search,
+            "enrolments": enrolled[:enrolled_shown],
+            "enrolments_count": integration.enrolments.count(),
+            "enrolments_active": integration.enrolments.filter(is_active=True).count(),
+            "enrolments_found": enrolled_found,
+            "enrolments_more": enrolled_shown + PEOPLE_PAGE if enrolled_found > enrolled_shown else 0,
+            "enrolment_search": enrolment_search,
+            "hook_url": request.build_absolute_uri(
+                reverse("integrations:purchase_hook", args=[integration.key, integration.hook_secret])
+            ),
+            "platforms": sorted(hooks.PRESETS),
+            "purchases": [{**item, "at": parse_datetime(item["at"])} for item in hooks.recent(integration)[:8]],
+            "room_url": request.build_absolute_uri(reverse("integrations:room", args=[integration.key, chosen]))
+            if chosen else "",
             "refusals": [
                 {**item, "at": parse_datetime(item["at"])} for item in diagnostics.recent(integration)[:8]
             ],
@@ -451,3 +610,75 @@ def webhook_resend(request, pk, delivery_id):
         deliver_webhook.delay(delivery.pk)
         messages.success(request, _("Sent again. Its result shows in the list in a few seconds."))
     return redirect(f"{reverse('integrations:detail', args=[integration.pk])}#webhooks")
+
+
+def room(request, key: str, uid: str, kind: str = "live"):
+    """The class by itself, for platforms that take a link and nothing else:
+    the live with its chat (or the video with its comments) filling the page,
+    where the school's people sign in with a code by e-mail."""
+    integration = Integration.objects.filter(key=key, is_active=True).first()
+    if integration is None:
+        return embed_missing(request, kind)
+    target = reverse("live:embed", args=[uid]) if kind == "live" else reverse("core:embed", args=[uid])
+    query = {"layout": "both", "school": integration.key}
+    for name in ("lang", "theme"):
+        if request.GET.get(name):
+            query[name] = request.GET[name][:12]
+    return redirect(f"{target}?{urlencode(query)}")
+
+
+@login_required
+@require_POST
+def enrolments_view(request, pk):
+    """The studio's handling of the list of enrolments: how people sign in,
+    adding one, importing a spreadsheet, taking someone off."""
+    integration = _mine(request, pk)
+    action = request.POST.get("action")
+    back = f"{reverse('integrations:detail', args=[integration.pk])}#enrolments"
+    if action == "options":
+        integration.email_login = request.POST.get("email_login") == "1"
+        integration.declared_login = request.POST.get("declared_login") == "1"
+        integration.hook_token = (request.POST.get("hook_token") or "").strip()[:200]
+        integration.save(update_fields=["email_login", "declared_login", "hook_token"])
+        messages.success(request, _("Saved."))
+    elif action == "add":
+        enrolment, created = enrolments.upsert(
+            integration, request.POST.get("email"), name=request.POST.get("name") or None,
+            classes=request.POST.get("classes") or "", teacher=request.POST.get("teacher") == "1", source="manual",
+        )
+        if enrolment is None:
+            messages.error(request, _("That does not look like an e-mail address."))
+        else:
+            messages.success(request, _("%(email)s is enrolled.") % {"email": enrolment.email})
+    elif action == "import":
+        text = request.POST.get("rows") or ""
+        upload = request.FILES.get("file")
+        if upload is not None:
+            if upload.size > IMPORT_BYTES:
+                messages.error(request, _("That file is too large: at most 2 MB."))
+                return redirect(back)
+            text = upload.read().decode("utf-8-sig", "replace")
+        result = enrolments.import_rows(integration, text)
+        messages.success(
+            request, _("%(added)d added, %(updated)d brought up to date.")
+            % {"added": result["added"], "updated": result["updated"]},
+        )
+        if result["bad"]:
+            messages.warning(
+                request, _("Lines with no valid e-mail were skipped: %(lines)s")
+                % {"lines": ", ".join(str(line) for line in result["bad"][:20])},
+            )
+    elif action in ("remove", "off", "on"):
+        enrolment = get_object_or_404(Enrolment, pk=request.POST.get("id"), integration=integration)
+        if action == "remove":
+            enrolments.remove(enrolment)
+            messages.success(request, _("%(email)s was taken off the list.") % {"email": enrolment.email})
+        elif action == "off":
+            enrolments.revoke(integration, enrolment.email)
+        else:
+            enrolments.upsert(integration, enrolment.email, active=True)
+    elif action == "new_address":
+        integration.hook_secret = new_hook_secret()
+        integration.save(update_fields=["hook_secret"])
+        messages.success(request, _("New address made: paste it in the platform again."))
+    return redirect(back)

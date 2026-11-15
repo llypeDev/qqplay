@@ -50,6 +50,7 @@
   {% elif integration %}
     {# On a site: the site signs the person in; until it does, or if it cannot, say so. #}
     <p class="chat-note" data-chat-when="sign-in"{% if not chat.open or chat.can_post %} hidden{% endif %} data-school-note>{% blocktranslate with site=integration.name %}Sign in to {{ site }} to take part in the chat.{% endblocktranslate %}</p>
+    {% if integration.email_login %}{% include "integrations/_email_login.html" %}{% endif %}
   {% else %}
     <p class="chat-note" data-chat-when="sign-in"{% if not chat.open or chat.can_post %} hidden{% endif %}>{% blocktranslate with url=page_url %}<a href="{{ url }}" target="_blank" rel="noopener">Open the live</a> to take part in the chat.{% endblocktranslate %}</p>
   {% endif %}

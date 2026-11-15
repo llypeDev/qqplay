@@ -32,7 +32,7 @@ from apps.live import attendance, services
 from apps.live.models import Live, parse_groups
 from apps.media.models import Media
 
-from . import identities, tokens
+from . import enrolments, identities, tokens
 from .webhooks import live_data
 
 VISIBILITIES = {choice for choice, _label in Media.Visibility.choices}
@@ -227,4 +227,89 @@ def student(request, integration, external_id: str, action: str = ""):
     if request.method == "DELETE" and not action:
         identities.erase(identity, keep_messages=request.GET.get("keep_messages") == "1")
         return JsonResponse({"student": external_id, "deleted": True})
+    return _error(_("Not allowed."), 405)
+
+
+def _enrolment_out(enrolment) -> dict:
+    return {
+        "email": enrolment.email,
+        "name": enrolment.name,
+        "id": enrolment.external_id,
+        "classes": list(enrolment.groups or []),
+        "teacher": enrolment.is_moderator,
+        "active": enrolment.is_active,
+        "source": enrolment.source,
+        "updated_at": enrolment.updated_at.isoformat(),
+    }
+
+
+def _enrol(integration, item) -> tuple[dict | None, bool]:
+    if not isinstance(item, dict):
+        return None, False
+    classes = item.get("classes")
+    enrolment, created = enrolments.upsert(
+        integration, item.get("email"),
+        name=item.get("name") if isinstance(item.get("name"), str) else None,
+        classes=classes if isinstance(classes, (list, str)) else None,
+        teacher=item.get("teacher") if isinstance(item.get("teacher"), bool) else None,
+        external_id=item.get("id") if isinstance(item.get("id"), (str, int)) else None,
+        active=item.get("active") is not False,
+        source="api",
+    )
+    return (_enrolment_out(enrolment) if enrolment else None), created
+
+
+@server_api
+def enrolment_list(request, integration):
+    """The people enrolled, for schools whose students sign in by e-mail.
+
+    GET  ?q=<part of an e-mail or name>&page=2     200 at a time
+    POST one {"email", "name", "classes", "teacher", "id", "active"} or
+         {"enrolments": [ ...up to 1000 of them ]}: each is added or
+         brought up to date; "active": false turns the access off
+    """
+    if request.method == "GET":
+        found = integration.enrolments.all()
+        search = (request.GET.get("q") or "").strip()[:80]
+        if search:
+            found = found.filter(Q(email__icontains=search) | Q(name__icontains=search))
+        try:
+            page = max(1, int(request.GET.get("page", 1)))
+        except (TypeError, ValueError):
+            page = 1
+        total = found.count()
+        rows = found[(page - 1) * 200: page * 200]
+        return JsonResponse({"total": total, "page": page, "enrolments": [_enrolment_out(row) for row in rows]})
+    if request.method != "POST":
+        return _error(_("Not allowed."), 405)
+    data = _body(request)
+    if isinstance(data.get("enrolments"), list):
+        added = updated = 0
+        bad = []
+        for index, item in enumerate(data["enrolments"][:1000]):
+            out, created = _enrol(integration, item)
+            if out is None:
+                bad.append(index)
+            elif created:
+                added += 1
+            else:
+                updated += 1
+        return JsonResponse({"added": added, "updated": updated, "bad": bad})
+    out, created = _enrol(integration, data)
+    if out is None:
+        return _error(_("That does not look like an e-mail address."))
+    return JsonResponse(out, status=201 if created else 200)
+
+
+@server_api
+def enrolment_detail(request, integration, email: str):
+    """GET one; DELETE takes them off the list (and ends their session)."""
+    enrolment = enrolments.find(integration, email)
+    if enrolment is None:
+        return _error(_("No such enrolment."), 404)
+    if request.method == "GET":
+        return JsonResponse(_enrolment_out(enrolment))
+    if request.method == "DELETE":
+        enrolments.remove(enrolment)
+        return JsonResponse({"deleted": enrolment.email})
     return _error(_("Not allowed."), 405)
