@@ -3,13 +3,16 @@
 // A small Node server plays the school: on another origin than the portal, it
 // signs its people in with the integration's secret (a token URL, as the
 // studio page shows) and puts the live and a video of the library on its
-// lesson pages with the script. A creator makes the integration and sets its
-// look in the studio; the school's server schedules a private live for one
-// class through the API; a student and a teacher of that class talk in the
-// chat, the teacher wears the Streaming badge, answers a question, pins a
-// message, slows the chat down and mutes the student for a moment; a student
-// of another class is kept out; the two comment on a video and the teacher
-// hides a comment; the school's server reads the attendance, blocks the
+// lesson pages with the script. A creator makes the integration, sets its
+// look and checks a sample token in the studio; the school's server schedules
+// a private live for one class through the API; a student and a teacher of
+// that class talk in the chat, the teacher wears the Streaming badge, answers
+// a question, pins a message, slows the chat down and mutes the student for a
+// moment; a student of another class is kept out; a lesson drawn after the
+// page loaded (a single-page site) is picked up, and an address that is not
+// among the integration's sites gets an explanation; the two comment on a
+// video and the teacher hides a comment; the school's server reads the
+// attendance, blocks the
 // student and erases their data. Text selectors follow the default
 // interface language, Brazilian Portuguese, or avoid text altogether.
 //
@@ -119,6 +122,12 @@ function school(state) {
     if (url.pathname === "/aula" && who) {
       return send(200, "text/html; charset=utf-8", page("Aula ao vivo",
         `<div data-qqplay-live="${state.live}" data-layout="both" data-token-url="/token?who=${who}"></div>`));
+    }
+    if (url.pathname === "/spa" && who) {
+      // A site that draws the lesson after the page has loaded (React, Vue…).
+      const widget = `<div data-qqplay-live="${state.live}" data-layout="both" data-token-url="/token?who=${who}"></div>`;
+      return send(200, "text/html; charset=utf-8", page("Aula ao vivo",
+        `<div id="app"></div><script>setTimeout(function () { document.getElementById("app").innerHTML = ${JSON.stringify(widget)}; }, 1200);</script>`));
     }
     if (url.pathname === "/video" && who) {
       return send(200, "text/html; charset=utf-8", page("Revisão em vídeo",
@@ -233,6 +242,16 @@ async function main() {
     expect(await studio.locator('input[name="chat_title"]:not([type="hidden"])').inputValue() === "Sala de aula",
       "the look of the frames is saved (colour and the chat's title)");
 
+    const now = Math.floor(Date.now() / 1000);
+    const sample = sign({ sub: "t-1", name: "Aluna de teste", groups: ["turma-a"], exp: now + 600 }, state.key, state.secret);
+    await studio.locator('#diagnostics textarea[name="token"]').fill(sample);
+    await Promise.all([studio.waitForNavigation(), studio.locator('#diagnostics button[type="submit"]').click()]);
+    expect(await studio.locator("#diagnostics .check-result.is-ok").filter({ hasText: "Aluna de teste" }).count() === 1,
+      "the studio reads a token as the sign-in would and says it is valid");
+    await studio.locator('#diagnostics textarea[name="token"]').fill(sample.slice(0, -4) + "AAAA");
+    await Promise.all([studio.waitForNavigation(), studio.locator('#diagnostics button[type="submit"]').click()]);
+    expect(await studio.locator("#diagnostics .check-result.is-bad").count() === 1, "...and says what is wrong with a bad one");
+
     // ------------------------------------------------ the school's server
     expect((await api(state, "GET", "lives/", undefined, "")).status === 401, "the API refuses a request without a token");
     const personToken = sign({ sub: "x", name: "X", exp: Math.floor(Date.now() / 1000) + 60 }, state.key, state.secret);
@@ -316,6 +335,23 @@ async function main() {
       "a student of another class is kept out of the live");
     await shot(bia.page, "integration-other-class");
     await bia.context.close();
+
+    // ------------------------------------------------ single-page sites, sites not listed
+    const spa = await lesson(browser, errors, "rui", "spa");
+    await signedIn(spa.frame, "Prof. Rui");
+    expect(true, "a lesson drawn after the page loaded is picked up by itself (single-page sites)");
+    await spa.context.close();
+
+    // The same lesson on an address that is not among the integration's
+    // sites: the browser refuses the frame (and says so in the console), and
+    // the script explains instead of leaving a blank box.
+    const elsewhere = await browser.newContext({ viewport: { width: 1280, height: 860 }, ignoreHTTPSErrors: INSECURE });
+    const stranger = await elsewhere.newPage();
+    await stranger.goto(`http://localhost:${PORT}/aula?who=rui`);
+    await stranger.locator("[data-qqplay-problem]").waitFor({ timeout: WAIT });
+    expect(await stranger.locator("iframe").count() === 0, "a site that is not listed gets an explanation, not a blank frame");
+    await shot(stranger, "integration-not-listed");
+    await elsewhere.close();
 
     // ------------------------------------------------ attendance
     if (onAir) {

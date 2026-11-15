@@ -127,7 +127,9 @@ async def _stream(live_id):
 
 async def events(request, uid: str):
     if not isinstance(request, ASGIRequest):
-        return HttpResponse(status=204)
+        response = HttpResponse(status=204)
+        response["Access-Control-Allow-Origin"] = "*"
+        return response
     live_id = await sync_to_async(_live_for)(request.GET.get("t", ""), uid)
     if live_id is None:
         raise Http404("live not found")
@@ -135,4 +137,7 @@ async def events(request, uid: str):
     response["Cache-Control"] = "no-store"
     # Proxies must pass every event on at once.
     response["X-Accel-Buffering"] = "no"
+    # The ticket in the address is all it goes by: a frame in a sandboxed
+    # page, which has no origin of its own, may listen too.
+    response["Access-Control-Allow-Origin"] = "*"
     return response

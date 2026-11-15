@@ -2834,6 +2834,15 @@ button.tab { border: 0; background: none; font: inherit; cursor: pointer; }
 .color-field .input { max-width: 140px; }
 .delivery-list { display: grid; gap: 6px; margin: 14px 0 0; padding: 0; list-style: none; font-size: 13px; }
 .delivery-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.people-search { display: flex; gap: 8px; padding: 14px 22px 0; }
+.people-search .input { min-height: 36px; padding-top: 6px; padding-bottom: 6px; font-size: 14px; }
+.people-more { margin: 0; padding: 14px 22px; border-top: 1px solid var(--line); }
+.panel-sub { margin: 18px 0 8px; font: 600 13px/1.3 var(--font-display); color: var(--text-2); }
+.check-result { display: grid; gap: 6px; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 13.5px; }
+.check-result.is-ok { border-color: var(--success); background: var(--success-soft); }
+.check-result.is-bad { border-color: var(--danger); background: var(--danger-soft); }
+.check-claims { margin: 4px 0 0; padding: 10px 12px; overflow-x: auto; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-2); font: 12px/1.55 var(--font-mono); }
+.delivery-list form { margin: 0; }
 .people-list { margin: 14px 0 0; padding: 0; list-style: none; }
 .people-list > li { padding: 14px 22px; border-top: 1px solid var(--line); }
 .people-list > li.is-blocked .user-cell { opacity: 0.6; }

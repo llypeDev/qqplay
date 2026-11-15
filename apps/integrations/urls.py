@@ -47,8 +47,13 @@ urlpatterns = [
     path("api/integrations/v1/lives/<str:uid>/end/", api.live_end, name="api_live_end"),
     path("api/integrations/v1/lives/<str:uid>/attendance/", api.live_attendance, name="api_live_attendance"),
     path("api/integrations/v1/videos/", api.videos, name="api_videos"),
-    path("api/integrations/v1/students/<str:external_id>/", api.student, name="api_student"),
-    path("api/integrations/v1/students/<str:external_id>/<str:action>/", api.student, name="api_student_action"),
+    # Ids are whatever the site uses, slashes included.
+    path("api/integrations/v1/students/<path:external_id>/block/", api.student, {"action": "block"}, name="api_student_block"),
+    path(
+        "api/integrations/v1/students/<path:external_id>/unblock/", api.student, {"action": "unblock"},
+        name="api_student_unblock",
+    ),
+    path("api/integrations/v1/students/<path:external_id>/", api.student, name="api_student"),
     # the studio
     path("studio/integrations/", views.studio_list, name="list"),
     path("studio/integrations/<uuid:pk>/", views.studio_detail, name="detail"),
@@ -57,5 +62,11 @@ urlpatterns = [
     path("studio/integrations/<uuid:pk>/preview/", views.preview, name="preview"),
     path("studio/integrations/<uuid:pk>/look/", views.look, name="look"),
     path("studio/integrations/<uuid:pk>/webhook/test/", views.webhook_test, name="webhook_test"),
+    path(
+        "studio/integrations/<uuid:pk>/webhook/<int:delivery_id>/resend/",
+        views.webhook_resend,
+        name="webhook_resend",
+    ),
+    path("studio/integrations/<uuid:pk>/check/", views.check_token, name="check_token"),
     path("studio/integrations/<uuid:pk>/people/<int:person_id>/", views.person, name="person"),
 ]

@@ -13,13 +13,19 @@ integration off, replacing its secret or deactivating the account ends it.
 """
 from __future__ import annotations
 
+import contextlib
+import time
 from dataclasses import dataclass
 from functools import wraps
 
 from django.contrib.auth.models import AnonymousUser
 from django.core import signing
+from django.http import HttpResponse
+from django.utils import translation
 from django.utils.cache import patch_cache_control
 from django.views.decorators.csrf import csrf_exempt
+
+from apps.core.embedding import language_from
 
 from .models import ExternalIdentity, Integration
 
@@ -56,10 +62,20 @@ class EmbedContext:
         return bool(self.identity and self.identity.is_moderator and self.grants_live(live))
 
 
-def issue(identity: ExternalIdentity) -> str:
+def issue(identity: ExternalIdentity, secret_version: str = "") -> str:
+    """A session for the person. It remembers which secret signed the token
+    it came from, so it ends when that secret stops being accepted, and when
+    it was made, so blocking the person or turning the integration off ends
+    it for good."""
     integration = identity.integration
     return signing.dumps(
-        {"u": str(identity.user_id), "i": str(integration.pk), "v": integration.secret_version}, salt=SALT
+        {
+            "u": str(identity.user_id),
+            "i": str(integration.pk),
+            "v": secret_version or integration.secret_version,
+            "t": int(time.time()),
+        },
+        salt=SALT,
     )
 
 
@@ -79,7 +95,50 @@ def load(token: str) -> ExternalIdentity | None:
     versions = {Integration.version_of(secret) for secret in integration.secrets_in_force()}
     if not integration.is_active or data.get("v") not in versions:
         return None
+    made = data.get("t") or 0
+    for since in (integration.sessions_since, identity.sessions_since):
+        if since is not None and made < since.timestamp():
+            return None
     return identity
+
+
+def confine(request, owner_id) -> None:
+    """A site's session speaks only on its creator's lives and videos: on
+    anyone else's it is a visitor, who reads what is public and no more.
+    Otherwise an integration could make accounts at will to write on others'
+    chats, out of reach of their mutes."""
+    embed = getattr(request, "embed", None)
+    if embed is not None and embed.integration.owner_id != owner_id:
+        request.user = AnonymousUser()
+        request.embed = None
+
+
+#: The frame's API answers any origin. It can: nothing here goes by cookies,
+#: only by the session in the Authorization header, so a page elsewhere has
+#: no more power than a program holding the same session. It must: a frame
+#: inside a sandboxed page has no origin of its own, and a school's own app
+#: or page may talk to the API directly.
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-QQplay-Lang, X-CSRFToken",
+    "Access-Control-Expose-Headers": "X-QQplay-Session, Retry-After",
+    "Access-Control-Max-Age": "600",
+}
+
+
+def open_to_any_origin(view):
+    """Answer the browser's preflight and mark the answers as readable from
+    any origin (see CORS_HEADERS)."""
+
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        response = HttpResponse(status=204) if request.method == "OPTIONS" else view(request, *args, **kwargs)
+        for name, value in CORS_HEADERS.items():
+            response[name] = value
+        return response
+
+    return wrapper
 
 
 def _bearer(request) -> str:
@@ -93,6 +152,7 @@ def embed_api(view):
     integration may open private lives and moderation to them."""
 
     @csrf_exempt
+    @open_to_any_origin
     @wraps(view)
     def wrapper(request, *args, **kwargs):
         token = _bearer(request)
@@ -103,7 +163,9 @@ def embed_api(view):
         else:
             request.user = AnonymousUser()
             request.embed = None
-        response = view(request, *args, **kwargs)
+        language = language_from(request.META.get("HTTP_X_QQPLAY_LANG"))
+        with translation.override(language) if language else contextlib.nullcontext():
+            response = view(request, *args, **kwargs)
         patch_cache_control(response, no_store=True)
         if token and identity is None:
             # The page knows to ask its site for a new token.

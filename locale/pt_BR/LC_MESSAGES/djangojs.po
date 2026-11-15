@@ -4,7 +4,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: QQplay\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 00:12+0000\n"
+"POT-Creation-Date: 2026-11-15 21:33+0000\n"
 "PO-Revision-Date: 2026-11-03 16:07+0000\n"
 "Last-Translator: QQplay\n"
 "Language-Team: Português (Brasil)\n"
@@ -199,51 +199,56 @@ msgstr "Pronto"
 
 #. Translators: badge next to the names of the host and the moderators in the
 #. live chat.
-#: static/js/embed-comments.js:23 static/js/live.js:924
+#: static/js/embed-comments.js:23 static/js/live.js:942
 msgid "Streaming"
 msgstr "Streaming"
 
-#: static/js/embed-comments.js:150
+#: static/js/embed-comments.js:154
 msgid "This video is for other classes"
 msgstr "Este vídeo é de outras turmas"
 
-#: static/js/embed-comments.js:151
+#: static/js/embed-comments.js:155
 msgid "This video is only for the school's people"
 msgstr "Este vídeo é só para as pessoas da escola"
 
-#: static/js/embed-comments.js:169 static/js/live.js:970
+#: static/js/embed-comments.js:174 static/js/live.js:1014
 msgid "You could not be signed in."
 msgstr "Não foi possível conectar você."
 
-#: static/js/embed-comments.js:189 static/js/live.js:275
+#: static/js/embed-comments.js:196 static/js/live.js:284
 msgid "If you are in one of them, ask your school."
 msgstr "Se você está em uma delas, fale com a sua escola."
 
-#: static/js/embed-comments.js:267
+#: static/js/embed-comments.js:214 static/js/live.js:989
+#: static/js/live.js:1042
+msgid "Reload the page to sign in again."
+msgstr "Recarregue a página para entrar de novo."
+
+#: static/js/embed-comments.js:303
 msgid "Reply"
 msgstr "Responder"
 
-#: static/js/embed-comments.js:276
+#: static/js/embed-comments.js:312
 msgid "Hide"
 msgstr "Ocultar"
 
-#: static/js/embed-comments.js:323
+#: static/js/embed-comments.js:359
 msgid "Replying to %(name)s"
 msgstr "Respondendo a %(name)s"
 
-#: static/js/embed-comments.js:336
+#: static/js/embed-comments.js:372
 msgid "at %(time)s"
 msgstr "em %(time)s"
 
-#: static/js/embed-comments.js:351
+#: static/js/embed-comments.js:387
 msgid "The comment could not be sent."
 msgstr "Não foi possível enviar o comentário."
 
-#: static/js/embed-comments.js:393
+#: static/js/embed-comments.js:429
 msgid "The comment could not be hidden."
 msgstr "Não foi possível ocultar o comentário."
 
-#: static/js/embed-comments.js:394
+#: static/js/embed-comments.js:430
 msgid "Comment hidden."
 msgstr "Comentário ocultado."
 
@@ -292,177 +297,177 @@ msgid "%(seconds)s s"
 msgstr "%(seconds)s s"
 
 #. Translators: number of people watching a live stream right now.
-#: static/js/live.js:443
+#: static/js/live.js:461
 msgid "%(count)s watching"
 msgid_plural "%(count)s watching"
 msgstr[0] "%(count)s assistindo"
 msgstr[1] "%(count)s assistindo"
 
 #. Translators: %(time)s is a countdown such as "2 h 05 min".
-#: static/js/live.js:478
+#: static/js/live.js:496
 msgid "Starts in %(time)s"
 msgstr "Começa em %(time)s"
 
-#: static/js/live.js:479
+#: static/js/live.js:497
 msgid "Starting any moment now"
 msgstr "Começa a qualquer momento"
 
-#: static/js/live.js:516
+#: static/js/live.js:534
 msgid "Something went wrong."
 msgstr "Algo deu errado."
 
-#: static/js/live.js:574
+#: static/js/live.js:592
 msgid "Slow mode on."
 msgstr "Modo lento ativado."
 
-#: static/js/live.js:574
+#: static/js/live.js:592
 msgid "Slow mode off."
 msgstr "Modo lento desativado."
 
-#: static/js/live.js:617
+#: static/js/live.js:635
 msgid "Message pinned."
 msgstr "Mensagem fixada."
 
-#: static/js/live.js:617
+#: static/js/live.js:635
 msgid "Message unpinned."
 msgstr "Mensagem desafixada."
 
-#: static/js/live.js:628
+#: static/js/live.js:646
 msgid "Question marked as answered."
 msgstr "Pergunta marcada como respondida."
 
-#: static/js/live.js:628
+#: static/js/live.js:646
 msgid "Question opened again."
 msgstr "Pergunta reaberta."
 
-#: static/js/live.js:638
+#: static/js/live.js:656
 msgid "%(name)s is muted for 5 minutes."
 msgstr "Chat de %(name)s silenciado por 5 minutos."
 
-#: static/js/live.js:680
+#: static/js/live.js:698
 msgid "The message could not be sent."
 msgstr "Não foi possível enviar a mensagem."
 
-#: static/js/live.js:717
+#: static/js/live.js:735
 msgid "Wait %(seconds)s s"
 msgstr "Aguarde %(seconds)s s"
 
-#: static/js/live.js:727
+#: static/js/live.js:745
 msgid "The message could not be hidden."
 msgstr "Não foi possível ocultar a mensagem."
 
-#: static/js/live.js:730
+#: static/js/live.js:748
 msgid "Message hidden."
 msgstr "Mensagem ocultada."
 
-#: static/js/live.js:754
+#: static/js/live.js:772
 msgid "A moderator muted you until %(time)s."
 msgstr "Um moderador silenciou você até %(time)s."
 
-#: static/js/live.js:761
+#: static/js/live.js:779
 msgid "Slow mode: one message every %(seconds)s s."
 msgstr "Modo lento: uma mensagem a cada %(seconds)s s."
 
-#: static/js/live.js:819 static/js/live.js:820
+#: static/js/live.js:837 static/js/live.js:838
 msgid "Unpin"
 msgstr "Desafixar"
 
 #. Translators: votes on a question in the live chat, e.g. "Votes: 4".
-#: static/js/live.js:833 static/js/live.js:1142
+#: static/js/live.js:851 static/js/live.js:1205
 msgid "Votes: %(count)s"
 msgstr "Votos: %(count)s"
 
-#: static/js/live.js:835
+#: static/js/live.js:853
 msgid "Vote for this question"
 msgstr "Votar nesta pergunta"
 
 #. Translators: tag on a live chat message sent as a question for the host.
-#: static/js/live.js:875 static/js/live.js:1093 static/js/live.js:1201
+#: static/js/live.js:893 static/js/live.js:1156 static/js/live.js:1264
 msgid "Answered"
 msgstr "Respondida"
 
-#: static/js/live.js:901
+#: static/js/live.js:919
 msgid "Nobody right now."
 msgstr "Ninguém no momento."
 
-#: static/js/live.js:908
+#: static/js/live.js:926
 msgid "%(name)s, until %(time)s"
 msgstr "%(name)s, até %(time)s"
 
-#: static/js/live.js:913 static/js/player.js:1296 static/js/player.js:1440
+#: static/js/live.js:931 static/js/player.js:1296 static/js/player.js:1440
 msgid "Unmute"
 msgstr "Ativar som"
 
-#: static/js/live.js:954
+#: static/js/live.js:994
 msgid "Open this live from your school's site."
 msgstr "Abra esta live pelo site da sua escola."
 
-#: static/js/live.js:996
+#: static/js/live.js:1059
 msgid "This live is for other classes"
 msgstr "Esta live é de outras turmas"
 
-#: static/js/live.js:997
+#: static/js/live.js:1060
 msgid "This live is only for the school's people"
 msgstr "Esta live é só para as pessoas da escola"
 
-#: static/js/live.js:1015
+#: static/js/live.js:1078
 msgid "Signed in as %(name)s, moderator"
 msgstr "Conectado como %(name)s, moderador"
 
-#: static/js/live.js:1016
+#: static/js/live.js:1079
 msgid "Signed in as %(name)s"
 msgstr "Conectado como %(name)s"
 
 #. Translators: a reaction under a live chat message, e.g. "Like: 3".
-#: static/js/live.js:1049
+#: static/js/live.js:1112
 msgid "%(reaction)s: %(count)s"
 msgstr "%(reaction)s: %(count)s"
 
-#: static/js/live.js:1093 static/js/live.js:1201
+#: static/js/live.js:1156 static/js/live.js:1264
 msgid "Question"
 msgstr "Pergunta"
 
-#: static/js/live.js:1099
+#: static/js/live.js:1162
 msgid "Sign in to react."
 msgstr "Entre para reagir."
 
-#: static/js/live.js:1124
+#: static/js/live.js:1187
 msgid "The reaction could not be saved."
 msgstr "Não foi possível salvar a reação."
 
-#: static/js/live.js:1152
+#: static/js/live.js:1215
 msgid "Sign in to vote."
 msgstr "Entre para votar."
 
-#: static/js/live.js:1161
+#: static/js/live.js:1224
 msgid "The vote could not be saved."
 msgstr "Não foi possível salvar o voto."
 
 #. Translators: button that reacts to a live chat message, e.g. "React: Like".
-#: static/js/live.js:1242
+#: static/js/live.js:1305
 msgid "React: %(reaction)s"
 msgstr "Reagir: %(reaction)s"
 
-#: static/js/live.js:1250
+#: static/js/live.js:1313
 msgid "Pin over the chat"
 msgstr "Fixar no topo do chat"
 
-#: static/js/live.js:1252
+#: static/js/live.js:1315
 msgid "Mark as answered"
 msgstr "Marcar como respondida"
 
-#: static/js/live.js:1255
+#: static/js/live.js:1318
 msgid "Mute the author for 5 minutes"
 msgstr "Silenciar o autor por 5 minutos"
 
 #. Translators: moderation button on a live chat message.
-#: static/js/live.js:1258
+#: static/js/live.js:1321
 msgid "Hide message"
 msgstr "Ocultar mensagem"
 
 #. Translators: button on a touch screen that shows the reactions of a live
 #. chat message.
-#: static/js/live.js:1267
+#: static/js/live.js:1330
 msgid "React to this message"
 msgstr "Reagir a esta mensagem"
 

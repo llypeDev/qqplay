@@ -188,6 +188,11 @@ CELERY_BEAT_SCHEDULE = {
 #: Unfinished chunked uploads older than this are removed by the purge task.
 UPLOAD_SESSION_TTL_HOURS = env_int("UPLOAD_SESSION_TTL_HOURS", 24)
 
+# How many reverse proxies stand between the visitors and the portal (Caddy:
+# 1; Traefik then Caddy: 2). With it the visitor's own address is read from
+# X-Forwarded-For; at 0 the header is ignored, as it must be with no proxy.
+TRUSTED_PROXY_COUNT = env_int("TRUSTED_PROXY_COUNT", 0)
+
 
 # --------------------------------------------------------------------------
 # Live streaming: encoders publish RTMP to the ingest server (nginx with the

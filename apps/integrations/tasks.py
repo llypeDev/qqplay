@@ -40,6 +40,11 @@ def deliver_webhook(self, delivery_id: int) -> str:
         "X-QQplay-Delivery": str(delivery.pk),
         "X-QQplay-Signature": webhooks.signature(body, integration.secret),
     }
+    previous = [secret for secret in integration.secrets_in_force() if secret != integration.secret]
+    if previous:
+        # While a replaced secret is still accepted, a server that has not
+        # moved to the new one yet can check this instead.
+        headers["X-QQplay-Signature-Previous"] = webhooks.signature(body, previous[0])
     delivery.attempts += 1
     try:
         answer = net.request("POST", delivery.url, body=body, headers=headers, max_bytes=64 * 1024, follow=False)

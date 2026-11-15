@@ -165,8 +165,15 @@
     this.school = root.getAttribute("data-school") || "";
     this.sessionUrl = root.getAttribute("data-session-url") || "";
     this.awaiting = root.hasAttribute("data-awaiting");
+    // A live only its school's people see: watched for the day it stops
+    // being theirs (blocked, or the session over with no new one).
+    this.gated = this.awaiting;
+    this.misses = 0;
+    this.lang = root.getAttribute("data-lang") || "";
     this.session = "";
     this.signingIn = false;
+    this.fromScript = false;
+    this.askedAgain = false;
     this.chatVersion = -1;
     this.pendingReactions = {};
     this.canReact = false;
@@ -196,6 +203,8 @@
     this.startClock();
     this.schedule();
     if (this.school && this.sessionUrl) this.bootSchool();
+    // A frame with no school still tells the site's script it is showing.
+    else if (this.mode === "embed") tellParent({ type: "qqplay:loaded" });
 
     var self = this;
     document.addEventListener("visibilitychange", function () {
@@ -274,6 +283,14 @@
           // Signed in, but the live is for other classes of the school.
           self.signInFailed(gettext("If you are in one of them, ask your school."), "classes");
         }
+        if (response.ok) {
+          self.misses = 0;
+        } else if (response.status === 404 && self.gated && !self.awaiting && !self.signingIn) {
+          // It was theirs to watch and is not any more: after a few answers
+          // saying so, back to the closed door (the page, loaded again).
+          self.misses += 1;
+          if (self.misses >= 3) window.location.reload();
+        }
         if (!response.ok) throw new Error("HTTP " + response.status);
         return response.json();
       })
@@ -292,6 +309,7 @@
     }
     var previous = this.state.status;
     this.state = data;
+    if (this.mode === "embed" && previous !== data.status) tellParent({ type: "qqplay:status", status: data.status });
     var root = this.root;
     root.setAttribute("data-status", data.status);
 
@@ -930,6 +948,7 @@
   LivePage.prototype.headers = function () {
     var headers = { Accept: "application/json", "X-CSRFToken": csrf() };
     if (this.session) headers.Authorization = "Bearer " + this.session;
+    if (this.lang) headers["X-QQplay-Lang"] = this.lang;
     return headers;
   };
 
@@ -942,39 +961,66 @@
 
   LivePage.prototype.bootSchool = function () {
     var self = this;
+    var top = window.parent === window;
     if (this.awaiting) each(this.root, "[data-chat-when]", function (node) { node.hidden = true; });
     window.addEventListener("message", function (event) {
       if (event.source !== window.parent || !event.data || event.data.type !== "qqplay:token") return;
-      self.signIn(String(event.data.token || ""), event.origin);
+      self.fromScript = true;
+      self.signIn(String(event.data.token || ""), event.origin, false);
     });
-    // A plain frame may carry the token in its address instead.
+    // A plain frame may carry the token in its address instead, and so may
+    // the address opened by itself in the school's app. It leaves the
+    // address at once, to stay in no history.
     var match = window.location.search.match(/[?&]token=([^&]+)/);
-    if (match) this.signIn(decodeURIComponent(match[1]), parentOrigin());
-    if (window.parent !== window) tellParent({ type: "qqplay:ready" });
-    else if (!match) this.signInFailed(gettext("Open this live from your school's site."), "frame");
+    if (match) {
+      var token = decodeURIComponent(match[1]);
+      try {
+        var search = window.location.search.replace(/([?&])token=[^&]+&?/, "$1").replace(/[?&]$/, "");
+        window.history.replaceState(null, "", window.location.pathname + search + window.location.hash);
+      } catch (e) { /* the address stays as it is */ }
+      this.signIn(token, top ? "" : parentOrigin(), top);
+    }
+    if (!top) {
+      tellParent({ type: "qqplay:ready" });
+      if (!match && this.awaiting) {
+        // Nobody answered with a token: a plain frame loaded again.
+        window.setTimeout(function () {
+          if (self.awaiting && !self.session && !self.signingIn && !self.fromScript) {
+            self.signInFailed(gettext("Reload the page to sign in again."), "frame");
+          }
+        }, 8000);
+      }
+    } else if (!match) {
+      this.signInFailed(gettext("Open this live from your school's site."), "frame");
+    }
   };
 
-  LivePage.prototype.signIn = function (token, origin) {
-    if (!token || this.signingIn) return;
+  LivePage.prototype.signIn = function (token, origin, direct, attempt) {
+    if (!token || (this.signingIn && !attempt)) return;
     var self = this;
+    attempt = attempt || 0;
     this.signingIn = true;
+    var headers = { "Content-Type": "application/json", Accept: "application/json" };
+    if (this.lang) headers["X-QQplay-Lang"] = this.lang;
     fetch(this.sessionUrl, {
       method: "POST",
       credentials: "omit",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ token: token, origin: origin || "" }),
+      headers: headers,
+      body: JSON.stringify({ token: token, origin: origin || "", direct: !!direct }),
     })
       .then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (payload) {
           if (!response.ok) {
             var error = new Error(payload.detail || gettext("You could not be signed in."));
-            error.code = payload.code || "";
+            error.code = payload.code || (response.status >= 500 ? "network" : "refused");
             throw error;
           }
           return payload;
         });
       })
       .then(function (payload) {
+        self.signingIn = false;
+        self.askedAgain = false;
         self.session = payload.session;
         self.showWho(payload.user);
         self.resetChat();
@@ -982,10 +1028,27 @@
         self.pollNow();
       })
       .catch(function (error) {
-        self.signInFailed(error.message, error.code || "network");
-        tellParent({ type: "qqplay:error", message: error.message, code: error.code || "network" });
-      })
-      .then(function () { self.signingIn = false; });
+        var code = error.code || "network";
+        // A whole class arriving at once, or a connection that blinked: it
+        // tries again by itself, a little later each time.
+        if ((code === "rate" || code === "network") && attempt < 6) {
+          window.setTimeout(function () {
+            self.signIn(token, origin, direct, attempt + 1);
+          }, 1500 * (attempt + 1) + Math.random() * 1500);
+          return;
+        }
+        self.signingIn = false;
+        var message = error.message;
+        if (code === "token" && !self.fromScript) message += " " + gettext("Reload the page to sign in again.");
+        self.signInFailed(message, code);
+        tellParent({ type: "qqplay:error", message: error.message, code: code });
+        if (code === "token" && self.fromScript && !self.askedAgain) {
+          // An old token (the frame waited to be shown): the site's script
+          // can fetch a new one.
+          self.askedAgain = true;
+          tellParent({ type: "qqplay:token-needed" });
+        }
+      });
   };
 
   LivePage.prototype.signInFailed = function (message, code) {

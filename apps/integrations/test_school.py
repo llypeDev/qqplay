@@ -169,8 +169,7 @@ class LookTests(IntegrationTestCase):
         video = self.client.get(reverse("core:embed", args=[media.uid]), {"school": self.integration.key})
         self.assertEqual(video["Content-Security-Policy"], f"frame-ancestors 'self' {SITE}")
         # Without a site, the public embed goes anywhere, as before.
-        self.assertEqual(self.client.get(reverse("core:embed", args=[media.uid]))["Content-Security-Policy"],
-                         "frame-ancestors *")
+        self.assertNotIn("Content-Security-Policy", self.client.get(reverse("core:embed", args=[media.uid])))
 
     def test_site_addresses_cannot_break_out_of_the_policy(self):
         self.assertEqual(normalize_origin("Escola.com.br/aulas"), "https://escola.com.br")
@@ -450,11 +449,11 @@ class ServerApiTests(IntegrationTestCase):
 
     def test_students(self):
         self.session()
-        self.assertEqual(self.call("post", "api_student_action", "42", "block").json()["blocked"], True)
+        self.assertEqual(self.call("post", "api_student_block", "42").json()["blocked"], True)
         self.assertTrue(ExternalIdentity.objects.get().is_blocked)
-        self.call("post", "api_student_action", "42", "unblock")
+        self.call("post", "api_student_unblock", "42")
         self.assertFalse(ExternalIdentity.objects.get().is_blocked)
-        self.assertEqual(self.call("post", "api_student_action", "42", "promote").status_code, 405)
+        self.assertEqual(self.call("post", "api_student", "42").status_code, 405)
         self.assertEqual(self.call("delete", "api_student", "nobody").status_code, 404)
         self.assertEqual(self.call("delete", "api_student", "42", query="?keep_messages=1").status_code, 200)
         self.assertFalse(ExternalIdentity.objects.exists())

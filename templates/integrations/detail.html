@@ -138,6 +138,7 @@ def qqplay_token(student):
      data-token="&lt;?= qqplay_token($student) ?&gt;"&gt;&lt;/div&gt;
 &lt;script src="{{ sdk_url }}" async&gt;&lt;/script&gt;</code></pre><button type="button" class="btn btn-sm code-copy" data-copy-target="#code-snippet" data-copied="{% translate 'Code copied' %}">{% icon "copy" "icon-sm" %}{% translate "Copy" %}</button></div>
               <p class="muted small">{% blocktranslate %}<code>data-token</code> takes the token from step 1 (the example is PHP; use your language's way of printing it). For classes longer than a few hours, use <code>data-token-url</code> instead: an address on your site that answers <code>{"token": "…"}</code> for the student signed in; the frame asks it again when the session runs out.{% endblocktranslate %}</p>
+              <p class="muted small">{% blocktranslate with key=integration.key %}On sites that change page without loading one (React, Vue, Next), the element can be added at any time: the script finds it. <code>data-lang="en"</code> shows the frame in English, and <code>data-school="{{ key }}"</code> is only needed when the token is given later with <code>QQplay.setToken</code>.{% endblocktranslate %}</p>
               <p class="muted small">{% blocktranslate %}A video of your library goes the same way, with its comments: <code>data-qqplay-video="&lt;video id&gt;"</code> and <code>data-layout="both"</code> (or <code>player</code>, <code>comments</code>). Your private videos show only to the people your site signs in.{% endblocktranslate %}</p>
             {% else %}
               <p class="muted">{% translate "Create a live first: its code appears here." %} <a class="text-link" href="{% url 'live:new' %}">{% translate "New live" %}</a></p>
@@ -160,6 +161,12 @@ def qqplay_token(student):
           <h2><span class="panel-title-icon">{% icon "users" %}</span>{% translate "People from this site" %}</h2>
           <span class="muted">{{ people_count }}</span>
         </div>
+        {% if people_count > 8 or search %}
+          <form class="people-search" method="get" action="#people">
+            <input class="input" type="search" name="q" value="{{ search }}" maxlength="80" placeholder="{% translate 'Search by name or id' %}" aria-label="{% translate 'Search by name or id' %}">
+            <button class="btn btn-sm" type="submit">{% icon "search" "icon-sm" %}{% translate "Search" %}</button>
+          </form>
+        {% endif %}
         {% if people %}
           <ul class="people-list">
             {% for person in people %}
@@ -189,6 +196,11 @@ def qqplay_token(student):
               </li>
             {% endfor %}
           </ul>
+          {% if people_more %}
+            <p class="people-more"><a class="btn btn-sm" href="?{% if search %}q={{ search|urlencode }}&amp;{% endif %}people={{ people_more }}#people">{% translate "Show more" %}</a></p>
+          {% endif %}
+        {% elif search %}
+          <p class="muted" style="padding: 0 20px 20px">{% translate "Nobody matches the search." %}</p>
         {% else %}
           <p class="muted" style="padding: 0 20px 20px">{% translate "Nobody has signed in through this site yet." %}</p>
         {% endif %}
@@ -252,8 +264,10 @@ def qqplay_token(student):
             <span class="field-label">{% translate "Sites" %} <span class="hint">{% translate "one per line" %}</span></span>
             <textarea class="textarea mono" name="origins" rows="3" spellcheck="false" placeholder="https://escola.com.br">{{ form.origins.value|default:'' }}</textarea>
             <span class="field-help">{% if integration.origin_list %}{% translate "Only pages on these sites can sign people in. List both addresses if yours works with and without www." %}{% else %}{% translate "Empty: any site with a valid token can sign people in. List your site to be safe." %}{% endif %}</span>
+            <span class="field-help">{% blocktranslate %}Every subdomain at once: <code>https://*.escola.com.br</code>. A Capacitor or Ionic app: <code>capacitor://localhost</code>. If your page is shown inside another site's frame (a page builder, an LMS), list that site too.{% endblocktranslate %}</span>
             {% for error in form.origins.errors %}<span class="field-error">{{ error }}</span>{% endfor %}
           </label>
+          <label class="check"><input type="checkbox" name="allow_direct" value="1"{% if integration.allow_direct %} checked{% endif %}> {% translate "Allow a frame's address to be opened by itself, with a token: your mobile app, or a link" %}</label>
           <div class="form-actions"><button class="btn btn-primary" type="submit">{% icon "check" "icon-sm" %}{% translate "Save" %}</button></div>
         </form>
       </section>
@@ -315,9 +329,50 @@ def qqplay_token(student):
                 <code>{{ delivery.event }}</code>
                 <time class="muted" datetime="{{ delivery.created_at|date:'c' }}" data-local>{{ delivery.created_at|date:"SHORT_DATETIME_FORMAT" }}</time>
                 {% if delivery.error %}<span class="muted small" title="{{ delivery.error }}">{{ delivery.error|truncatechars:60 }}</span>{% endif %}
+                {% if not delivery.ok %}
+                  <form method="post" action="{% url 'integrations:webhook_resend' integration.pk delivery.pk %}">
+                    {% csrf_token %}
+                    <button class="btn btn-ghost btn-sm" type="submit">{% icon "send" "icon-sm" %}{% translate "Send again" %}</button>
+                  </form>
+                {% endif %}
               </li>
             {% endfor %}
           </ul>
+        {% endif %}
+      </section>
+
+      {# ---------------------------------------------------------- diagnostics #}
+      <section class="panel" id="diagnostics">
+        <div class="panel-head">
+          <h2><span class="panel-title-icon">{% icon "activity" %}</span>{% translate "Diagnostics" %}</h2>
+        </div>
+        <p class="muted small">{% translate "Paste a token your server made to see what the sign-in makes of it. Nothing is signed in." %}</p>
+        <form class="form-grid" method="post" action="{% url 'integrations:check_token' integration.pk %}">
+          {% csrf_token %}
+          <textarea class="textarea mono" name="token" rows="3" spellcheck="false" required placeholder="eyJhbGciOiJIUzI1NiIs…" aria-label="{% translate 'Token' %}"></textarea>
+          <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">{% icon "check" "icon-sm" %}{% translate "Check the token" %}</button></div>
+        </form>
+        {% if checked %}
+          <div class="check-result {% if checked.ok %}is-ok{% else %}is-bad{% endif %}" role="status">
+            <strong>{% if checked.ok and checked.kind == "api" %}{% translate "Valid: your server can use the API with it." %}{% elif checked.ok %}{% translate "Valid: this person would be signed in." %}{% elif checked.error == "other" %}{% translate "This token is valid, but it belongs to another integration." %}{% else %}{{ checked.error }}{% endif %}</strong>
+            {% if checked.person %}<span>{{ checked.person.name }} · <span class="mono">{{ checked.person.id }}</span>{% if checked.person.moderator %} · {% translate "Moderator" %}{% endif %}{% if checked.person.groups %} · {{ checked.person.groups|join:", " }}{% endif %}</span>{% endif %}
+            {% if checked.claims_text %}<pre class="check-claims">{{ checked.claims_text }}</pre>{% endif %}
+          </div>
+        {% endif %}
+        <h3 class="panel-sub">{% translate "Latest refused sign-ins" %}</h3>
+        {% if refusals %}
+          <ul class="delivery-list">
+            {% for item in refusals %}
+              <li>
+                <span class="badge badge-failed">{{ item.code }}</span>
+                <time class="muted" datetime="{{ item.at|date:'c' }}" data-local>{{ item.at|date:"SHORT_DATETIME_FORMAT" }}</time>
+                {% if item.origin %}<code>{{ item.origin }}</code>{% endif %}
+                <span class="muted small">{{ item.detail }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted small">{% translate "None in the last two weeks." %}</p>
         {% endif %}
       </section>
 

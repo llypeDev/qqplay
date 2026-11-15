@@ -4,6 +4,7 @@ Viewers' pages poll ``state`` every few seconds: one request answers what the
 page needs to know (status, stream address, viewers, recording) and brings
 what changed in the chat since the version the page has (see chat.py).
 """
+import contextlib
 import json
 import logging
 import re
@@ -21,13 +22,15 @@ from django.db.models import F
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, translation
 from django.utils.dateparse import parse_datetime
 from django.utils.html import escape
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_GET, require_POST
 
+from apps.core.embedding import allow_framing, language_from
+from apps.core.embedding import missing as embed_missing
 from apps.core.templatetags.akon import avatar
 from apps.media import access
 from apps.media.models import Category, Media
@@ -108,6 +111,11 @@ def _viewable(request, uid: str) -> Live:
     live = get_object_or_404(
         Live.objects.select_related("owner", "category", "recording"), uid=uid
     )
+    if getattr(request, "embed", None) is not None:
+        # A site's session speaks on its creator's lives only.
+        from apps.integrations.sessions import confine
+
+        confine(request, live.owner_id)
     if not (access.can_view_live(request.user, live) or _embed_grants(request, live)):
         raise Http404("live not found")
     return live
@@ -288,7 +296,9 @@ def embed(request, uid: str):
 
     from apps.integrations.models import Integration
 
-    live = get_object_or_404(Live.objects.select_related("recording", "owner"), uid=uid)
+    live = Live.objects.select_related("recording", "owner").filter(uid=uid).first()
+    if live is None:
+        return embed_missing(request, "live")
     layout = request.GET.get("layout", "player")
     layout = layout if layout in EMBED_LAYOUTS else "player"
     theme = request.GET.get("theme", "")
@@ -308,25 +318,29 @@ def embed(request, uid: str):
     viewer = request.user
     request.user = AnonymousUser()
     try:
-        page_state, page_json = _page_state(request, live) if available else ({}, "{}")
+        with translation.override(language_from(request.GET.get("lang")) or translation.get_language()):
+            page_state, page_json = _page_state(request, live) if available else ({}, "{}")
     finally:
         request.user = viewer
+    language = language_from(request.GET.get("lang"))
     context = {
         "live": live,
         "available": available or awaiting,
+        # Its name is for those who may see it, not for whoever has the address.
+        "named": available,
         "awaiting": awaiting,
         "layout": layout,
         "theme": theme,
         "integration": integration,
+        "frame_lang": language or "",
         "state": page_state,
         "state_json": page_json,
         "page_url": request.build_absolute_uri(live.get_absolute_url()),
     }
-    response = render(request, "live/embed.html", context, status=200 if available or awaiting else 404)
-    response["X-Frame-Options"] = "ALLOWALL"
+    with translation.override(language) if language else contextlib.nullcontext():
+        response = render(request, "live/embed.html", context, status=200 if available or awaiting else 404)
     # A school's frame shows only on the school's sites.
-    response["Content-Security-Policy"] = integration.frame_ancestors() if integration else "frame-ancestors *"
-    return response
+    return allow_framing(response, integration)
 
 
 @require_GET

@@ -19,7 +19,7 @@ import hmac
 import json
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 
@@ -69,9 +69,14 @@ def notify(live, event: str) -> list[WebhookDelivery]:
         if WebhookDelivery.objects.filter(integration=integration, event=event, subject=live.uid).exists():
             continue
         payload = {"event": event, "sent_at": timezone.now().isoformat(), "live": live_data(live)}
-        delivery = WebhookDelivery.objects.create(
-            integration=integration, event=event, subject=live.uid, url=integration.webhook_url, payload=payload,
-        )
+        try:
+            with transaction.atomic():
+                delivery = WebhookDelivery.objects.create(
+                    integration=integration, event=event, subject=live.uid, url=integration.webhook_url,
+                    payload=payload,
+                )
+        except IntegrityError:  # another process saw the same thing happen first
+            continue
         deliveries.append(delivery)
         transaction.on_commit(lambda pk=delivery.pk: deliver_webhook.delay(pk))
     return deliveries

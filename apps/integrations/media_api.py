@@ -8,6 +8,8 @@ classes the live was for; the site's teachers moderate the comments.
 from __future__ import annotations
 
 import json
+import math
+import uuid
 
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
@@ -22,6 +24,8 @@ from apps.media import access
 from apps.media.models import Comment, Media
 from apps.rbac import permissions as policy
 
+from . import sessions
+
 #: Longest comment a frame takes.
 MAX_LENGTH = 2000
 #: Most threads one answer carries, the newest first.
@@ -31,6 +35,7 @@ RATE_SECONDS = 5
 
 def media_for(request, uid: str) -> Media:
     media = get_object_or_404(Media.objects.select_related("owner"), uid=uid)
+    sessions.confine(request, media.owner_id)
     embed = getattr(request, "embed", None)
     granted = embed is not None and media.state == Media.State.READY and embed.grants_media(media)
     if not (access.can_view_media(request.user, media) or granted):
@@ -132,6 +137,8 @@ def comments(request, uid: str):
         data = json.loads(request.body or b"{}") if request.content_type == "application/json" else request.POST
     except ValueError:
         data = {}
+    if not hasattr(data, "get"):
+        data = {}
     body = str(data.get("body") or "").strip()
     if not body:
         return JsonResponse({"detail": _("Write a comment first.")}, status=400)
@@ -141,14 +148,20 @@ def comments(request, uid: str):
         )
     parent = None
     if data.get("parent"):
-        parent = media.comments.filter(pk=str(data.get("parent")), is_hidden=False, parent__isnull=True).first()
+        try:
+            parent_id = uuid.UUID(str(data.get("parent")))
+        except ValueError:
+            parent_id = None
+        parent = (
+            media.comments.filter(pk=parent_id, is_hidden=False, parent__isnull=True).first() if parent_id else None
+        )
         if parent is None:
             return JsonResponse({"detail": _("That comment is gone.")}, status=400)
     try:
         timestamp = float(data.get("timestamp")) if data.get("timestamp") not in (None, "") else None
     except (TypeError, ValueError):
         timestamp = None
-    if timestamp is not None and (timestamp < 0 or timestamp > 24 * 3600):
+    if timestamp is not None and not (math.isfinite(timestamp) and 0 <= timestamp <= 24 * 3600):
         timestamp = None
     if not cache.add(f"embed:comment:{user.pk}", 1, timeout=RATE_SECONDS):
         return JsonResponse({"detail": _("Slow down a little: one comment every few seconds.")}, status=429)
