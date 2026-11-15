@@ -24,9 +24,12 @@
   var panel = root.querySelector("[data-comments]");
   var list = panel && panel.querySelector("[data-comment-list]");
   var form = panel && panel.querySelector("[data-comment-form]");
+  var lang = root.getAttribute("data-lang") || "";
   var session = "";
   var replyTo = "";
   var signingIn = false;
+  var fromScript = false;
+  var askedAgain = false;
   var pollTimer = 0;
   var POLL = 20000;
 
@@ -53,6 +56,7 @@
     var out = { Accept: "application/json" };
     if (json) out["Content-Type"] = "application/json";
     if (session) out.Authorization = "Bearer " + session;
+    if (lang) out["X-QQplay-Lang"] = lang;
     return out;
   }
 
@@ -154,26 +158,29 @@
     }
   }
 
-  function signIn(token, origin) {
-    if (!token || signingIn || !sessionUrl) return;
+  function signIn(token, origin, direct, attempt) {
+    if (!token || !sessionUrl || (signingIn && !attempt)) return;
+    attempt = attempt || 0;
     signingIn = true;
     fetch(sessionUrl, {
       method: "POST",
       credentials: "omit",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ token: token, origin: origin || "" }),
+      headers: headers(true),
+      body: JSON.stringify({ token: token, origin: origin || "", direct: !!direct }),
     })
       .then(function (response) {
         return response.json().catch(function () { return {}; }).then(function (payload) {
           if (!response.ok) {
             var error = new Error(payload.detail || gettext("You could not be signed in."));
-            error.code = payload.code || "";
+            error.code = payload.code || (response.status >= 500 ? "network" : "refused");
             throw error;
           }
           return payload;
         });
       })
       .then(function (payload) {
+        signingIn = false;
+        askedAgain = false;
         session = payload.session;
         showWho(payload.user);
         tellParent({ type: "qqplay:signed-in", name: (payload.user && payload.user.name) || "" });
@@ -191,22 +198,51 @@
             });
         }
       })
-      .then(function () { load(); })
+      .then(function () { if (session) load(); })
       .catch(function (error) {
-        signInFailed(error.message);
-        tellParent({ type: "qqplay:error", message: error.message, code: error.code || "network" });
-      })
-      .then(function () { signingIn = false; });
+        var code = error.code || "network";
+        // Many people arriving at once, or a connection that blinked: it
+        // tries again by itself, a little later each time.
+        if ((code === "rate" || code === "network") && attempt < 6 && !session) {
+          window.setTimeout(function () {
+            signIn(token, origin, direct, attempt + 1);
+          }, 1500 * (attempt + 1) + Math.random() * 1500);
+          return;
+        }
+        signingIn = false;
+        var message = error.message;
+        if (code === "token" && !fromScript) message += " " + gettext("Reload the page to sign in again.");
+        signInFailed(message, code);
+        tellParent({ type: "qqplay:error", message: error.message, code: code });
+        if (code === "token" && fromScript && !askedAgain) {
+          askedAgain = true;
+          tellParent({ type: "qqplay:token-needed" });
+        }
+      });
   }
 
+  var top = window.parent === window;
   if (school && sessionUrl) {
     window.addEventListener("message", function (event) {
       if (event.source !== window.parent || !event.data || event.data.type !== "qqplay:token") return;
-      signIn(String(event.data.token || ""), event.origin);
+      fromScript = true;
+      signIn(String(event.data.token || ""), event.origin, false);
     });
+    // The token may come in the address instead (a plain frame, or the
+    // address opened by itself in the school's app); it leaves it at once.
     var match = window.location.search.match(/[?&]token=([^&]+)/);
-    if (match) signIn(decodeURIComponent(match[1]), parentOrigin());
-    if (window.parent !== window) tellParent({ type: "qqplay:ready" });
+    if (match) {
+      var given = decodeURIComponent(match[1]);
+      try {
+        var search = window.location.search.replace(/([?&])token=[^&]+&?/, "$1").replace(/[?&]$/, "");
+        window.history.replaceState(null, "", window.location.pathname + search + window.location.hash);
+      } catch (e) { /* the address stays as it is */ }
+      signIn(given, top ? "" : parentOrigin(), top);
+    }
+    if (!top) tellParent({ type: "qqplay:ready" });
+  } else if (!top) {
+    // A frame with no school still tells the site's script it is showing.
+    tellParent({ type: "qqplay:loaded" });
   }
 
   // ------------------------------------------------------------- comments

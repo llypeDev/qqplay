@@ -25,6 +25,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import time
 from dataclasses import dataclass
 from urllib.parse import urlsplit
@@ -45,7 +46,12 @@ API_LIFETIME = 3600
 
 
 class TokenError(Exception):
-    """Why a token was refused, in words for the site's developer."""
+    """Why a token was refused, in words for the site's developer. Carries
+    the integration when the token named one, for its diagnostics."""
+
+    def __init__(self, message, integration=None):
+        super().__init__(message)
+        self.integration = integration
 
 
 @dataclass
@@ -57,6 +63,8 @@ class Person:
     picture: str
     moderator: bool
     groups: list
+    #: Which of the secrets in force signed the token (Integration.version_of).
+    secret_version: str = ""
 
 
 def _b64decode(part: str) -> bytes:
@@ -103,24 +111,29 @@ def _check(token: str, now: float, max_lifetime: int) -> tuple[Integration, dict
         raise TokenError(_("No active integration has this key."))
     signed = f"{head_part}.{body_part}".encode()
     # The current secret, or the one before it while it is still accepted.
-    if not any(
-        hmac.compare_digest(hmac.new(secret.encode(), signed, hashlib.sha256).digest(), signature)
-        for secret in integration.secrets_in_force()
-    ):
-        raise TokenError(_("The signature does not match: check the integration's secret."))
+    version = ""
+    for secret in integration.secrets_in_force():
+        if hmac.compare_digest(hmac.new(secret.encode(), signed, hashlib.sha256).digest(), signature):
+            version = Integration.version_of(secret)
+            break
+    if not version:
+        raise TokenError(_("The signature does not match: check the integration's secret."), integration)
 
     expires = claims.get("exp")
-    if not isinstance(expires, (int, float)):
-        raise TokenError(_("The token needs an expiry (exp)."))
+    if isinstance(expires, bool) or not isinstance(expires, (int, float)) or not math.isfinite(expires):
+        raise TokenError(_("The token needs an expiry (exp)."), integration)
     if expires < now - LEEWAY:
-        raise TokenError(_("The token has expired."))
+        raise TokenError(_("The token has expired."), integration)
     if expires > now + max_lifetime + LEEWAY:
         if max_lifetime == MAX_LIFETIME:
-            raise TokenError(_("The token is valid for too long: at most a day."))
-        raise TokenError(_("The token is valid for too long: at most an hour."))
+            raise TokenError(_("The token is valid for too long: at most a day."), integration)
+        raise TokenError(_("The token is valid for too long: at most an hour."), integration)
     not_before = claims.get("nbf")
-    if isinstance(not_before, (int, float)) and not_before > now + LEEWAY:
-        raise TokenError(_("The token is not valid yet."))
+    if isinstance(not_before, (int, float)) and not isinstance(not_before, bool) and not (
+        math.isfinite(not_before) and not_before <= now + LEEWAY
+    ):
+        raise TokenError(_("The token is not valid yet."), integration)
+    claims["_secret_version"] = version
     return integration, claims
 
 
@@ -142,17 +155,17 @@ def verify(token: str, now: float | None = None) -> Person:
     now = time.time() if now is None else now
     integration, claims = _check(token, now, MAX_LIFETIME)
     if claims.get("scope") == "api":
-        raise TokenError(_("This is an API token, not a person's."))
+        raise TokenError(_("This is an API token, not a person's."), integration)
 
     subject = claims.get("sub")
     if isinstance(subject, int):
         subject = str(subject)
     subject = _text(subject, 200)
     if not subject:
-        raise TokenError(_("The token needs the person's id (sub)."))
+        raise TokenError(_("The token needs the person's id (sub)."), integration)
     name = _text(claims.get("name"), 120)
     if not name:
-        raise TokenError(_("The token needs the person's name (name)."))
+        raise TokenError(_("The token needs the person's name (name)."), integration)
     picture = _text(claims.get("picture"), 1000)
     if picture and urlsplit(picture).scheme != "https":
         picture = ""
@@ -167,4 +180,5 @@ def verify(token: str, now: float | None = None) -> Person:
         picture=picture,
         moderator=claims.get("moderator") is True,
         groups=parse_groups(claims.get("groups")) if isinstance(claims.get("groups"), (list, str)) else [],
+        secret_version=claims["_secret_version"],
     )

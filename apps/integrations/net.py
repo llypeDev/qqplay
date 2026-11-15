@@ -13,11 +13,17 @@ import http.client
 import ipaddress
 import socket
 import ssl
+import time
 from dataclasses import dataclass
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
+#: Seconds a connection or a single read may take...
 TIMEOUT = 8
+#: ...and the whole request, redirects included: a server that sends a byte
+#: now and then cannot hold a worker.
+DEADLINE = 25
 MAX_REDIRECTS = 3
+CHUNK = 64 * 1024
 
 
 class NetError(Exception):
@@ -62,16 +68,30 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 def request(method: str, url: str, body: bytes | None = None, headers: dict | None = None,
             max_bytes: int = 1024 * 1024, follow: bool = True) -> Answer:
     headers = {"User-Agent": "QQplay", **(headers or {})}
+    started = time.monotonic()
+
+    def left() -> float:
+        remaining = DEADLINE - (time.monotonic() - started)
+        if remaining <= 0:
+            raise NetError("the server took too long")
+        return min(TIMEOUT, remaining)
+
     for _ in range(MAX_REDIRECTS + 1):
-        parts = urlsplit(url)
+        try:
+            parts = urlsplit(url)
+            port = parts.port or 443
+        except ValueError as exc:  # a port that is not a number, a broken address
+            raise NetError("not an address") from exc
         if parts.scheme != "https" or not parts.hostname:
             raise NetError("only https addresses are used")
-        port = parts.port or 443
         address = public_address(parts.hostname, port)
         connection = _PinnedHTTPSConnection(
-            parts.hostname, address, port=port, timeout=TIMEOUT, context=ssl.create_default_context()
+            parts.hostname, address, port=port, timeout=left(), context=ssl.create_default_context()
         )
-        path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        # Whatever the address holds goes out as ASCII.
+        path = quote(parts.path or "/", safe="/%:@!$&'()*+,;=~-._") + (
+            "?" + quote(parts.query, safe="/%:@!$&'()*+,;=~-._?") if parts.query else ""
+        )
         try:
             connection.request(method, path, body=body, headers=headers)
             response = connection.getresponse()
@@ -80,8 +100,16 @@ def request(method: str, url: str, body: bytes | None = None, headers: dict | No
                 if response.status == 303:
                     method, body = "GET", None
                 continue
-            data = response.read(max_bytes + 1)
-        except (OSError, http.client.HTTPException) as exc:
+            data = b""
+            while len(data) <= max_bytes:
+                left()  # over once the whole request has taken too long
+                # One read of the connection at a time, so a slow trickle is
+                # noticed between reads instead of waited out.
+                chunk = response.read1(min(CHUNK, max_bytes + 1 - len(data)))
+                if not chunk:
+                    break
+                data += chunk
+        except (OSError, http.client.HTTPException, ValueError) as exc:
             raise NetError(str(exc) or type(exc).__name__) from exc
         finally:
             connection.close()

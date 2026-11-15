@@ -1,4 +1,5 @@
 """Public pages and operational endpoints."""
+import contextlib
 import json
 from datetime import timedelta
 
@@ -14,7 +15,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, translation
 from django.utils.cache import patch_vary_headers
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
@@ -22,6 +23,8 @@ from django.utils.translation import gettext_lazy
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 
+from apps.core.embedding import allow_framing, language_from
+from apps.core.embedding import missing as embed_missing
 from apps.live.models import Live
 from apps.media import access, pipeline
 from apps.media.models import Category, Comment, Media, Playlist, PlaylistItem
@@ -486,9 +489,9 @@ def embed(request, uid: str):
     """
     from apps.integrations.models import Integration
 
-    media = get_object_or_404(
-        Media.objects.select_related("owner").prefetch_related("subtitles", "chapters"), uid=uid
-    )
+    media = Media.objects.select_related("owner").prefetch_related("subtitles", "chapters").filter(uid=uid).first()
+    if media is None:
+        return embed_missing(request)
     layout = request.GET.get("layout", "player")
     layout = layout if layout in EMBED_LAYOUTS else "player"
     theme = request.GET.get("theme", "")
@@ -502,7 +505,7 @@ def embed(request, uid: str):
         and integration.grants_media(media)
     )
     if not (available or awaiting):
-        raise Http404("media not found")
+        return embed_missing(request)
 
     try:
         start = max(0, int(float(request.GET.get("start", 0))))
@@ -510,8 +513,10 @@ def embed(request, uid: str):
         start = 0
 
     chapters = list(media.chapters.all())
+    language = language_from(request.GET.get("lang"))
     context = {
         "media": media,
+        "frame_lang": language or "",
         "available": available,
         "awaiting": awaiting,
         "layout": layout,
@@ -530,11 +535,10 @@ def embed(request, uid: str):
         "storyboard_json": json.dumps(media.storyboard_config) if media.storyboard_config else "",
         "page_url": request.build_absolute_uri(reverse("core:media", args=[media.uid])),
     }
-    response = render(request, "core/embed.html", context)
+    with translation.override(language) if language else contextlib.nullcontext():
+        response = render(request, "core/embed.html", context)
     # Embeds are designed to live inside other sites; a school's only in its own.
-    response["X-Frame-Options"] = "ALLOWALL"
-    response["Content-Security-Policy"] = integration.frame_ancestors() if integration else "frame-ancestors *"
-    return response
+    return allow_framing(response, integration)
 
 
 @login_required

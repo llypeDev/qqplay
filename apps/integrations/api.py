@@ -90,7 +90,7 @@ def _apply(live: Live, data: dict) -> str:
     if "description" in data:
         live.description = str(data.get("description") or "")[:5000]
     if "visibility" in data:
-        if data["visibility"] not in VISIBILITIES:
+        if not isinstance(data["visibility"], str) or data["visibility"] not in VISIBILITIES:
             return _("visibility is public, unlisted or private.")
         live.visibility = data["visibility"]
     if "scheduled_for" in data:
@@ -98,12 +98,19 @@ def _apply(live: Live, data: dict) -> str:
         if value in (None, ""):
             live.scheduled_for = None
         else:
-            parsed = parse_datetime(str(value))
+            try:
+                parsed = parse_datetime(str(value))
+            except ValueError:  # well formed, but no such day or hour
+                parsed = None
             if parsed is None or timezone.is_naive(parsed):
                 return _("scheduled_for is a date and time with its time zone, such as 2026-11-20T19:00:00-03:00.")
             live.scheduled_for = parsed
     if "classes" in data:
-        live.groups = ", ".join(parse_groups(data.get("classes") or []))
+        classes = data.get("classes") or []
+        groups = ", ".join(parse_groups(classes if isinstance(classes, (list, str)) else []))
+        if len(groups) > Live._meta.get_field("groups").max_length:
+            return _("Too many classes for one live.")
+        live.groups = groups
     if "chat" in data:
         live.chat_enabled = bool(data["chat"])
     if "record" in data:

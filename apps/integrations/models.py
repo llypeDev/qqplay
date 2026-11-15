@@ -37,6 +37,12 @@ def new_secret() -> str:
     return secrets.token_urlsafe(32)
 
 
+WEB_SCHEMES = ("http", "https")
+#: Mobile apps made with Capacitor or Ionic serve their pages from these
+#: (capacitor://localhost on iOS), so a school can list its app as a site.
+APP_SCHEMES = ("capacitor", "ionic")
+
+
 def normalize_origin(value: str) -> str:
     """'https://Escola.com.br/aulas' -> 'https://escola.com.br'; '' if not an origin."""
     value = (value or "").strip()
@@ -47,7 +53,7 @@ def normalize_origin(value: str) -> str:
         port = parts.port
     except ValueError:
         return ""
-    if parts.scheme not in ("http", "https") or not parts.hostname:
+    if parts.scheme not in WEB_SCHEMES + APP_SCHEMES or not parts.hostname:
         return ""
     # Only what a host name is made of: the origins go into the frames'
     # Content-Security-Policy as they are.
@@ -85,6 +91,11 @@ class Integration(models.Model):
     chat_title = models.CharField(max_length=60, blank=True, verbose_name=_("chat title"))
     staff_label = models.CharField(max_length=30, blank=True, verbose_name=_("badge of the host and moderators"))
     hide_branding = models.BooleanField(default=False, verbose_name=_("hide the portal's name"))
+    #: A frame's address opened by itself, outside a page of the listed sites:
+    #: the school's mobile app (a WebView) or a link sent to the students.
+    allow_direct = models.BooleanField(default=False, verbose_name=_("open directly (apps and links)"))
+    #: Sessions made before this moment are over: set when it is turned off.
+    sessions_since = models.DateTimeField(null=True, blank=True, editable=False, verbose_name=_("sessions valid since"))
     created_at = models.DateTimeField(default=timezone.now, verbose_name=_("created at"))
     last_used_at = models.DateTimeField(null=True, blank=True, verbose_name=_("last used at"))
 
@@ -117,9 +128,12 @@ class Integration(models.Model):
 
     def frame_ancestors(self) -> str:
         """The Content-Security-Policy that lets only the listed sites (and
-        the portal itself, for the studio's preview) show its frames."""
+        the portal itself, for the studio's preview) show its frames. Empty
+        with no sites listed: no policy at all, so the frames also show in
+        pages no source could name (sandboxed wrappers, HTML given to an app).
+        """
         sites = self.origin_list
-        return "frame-ancestors 'self' " + " ".join(sites) if sites else "frame-ancestors *"
+        return "frame-ancestors 'self' " + " ".join(sites) if sites else ""
 
     @property
     def accent_ink(self) -> str:
@@ -130,7 +144,20 @@ class Integration(models.Model):
         return "#05070c" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "#ffffff"
 
     def allows_origin(self, origin: str) -> bool:
-        return normalize_origin(origin) in self.origin_list
+        """Listed as it is, or under a listed wildcard: https://*.escola.com.br
+        takes every subdomain and not escola.com.br itself, as browsers read
+        it in the frames' policy."""
+        origin = normalize_origin(origin)
+        if not origin:
+            return False
+        scheme, _sep, host = origin.partition("://")
+        for site in self.origin_list:
+            if site == origin:
+                return True
+            site_scheme, _sep, site_host = site.partition("://")
+            if site_host.startswith("*.") and site_scheme == scheme and host.endswith(site_host[1:]):
+                return True
+        return False
 
     @staticmethod
     def version_of(secret: str) -> str:
@@ -189,6 +216,8 @@ class ExternalIdentity(models.Model):
     groups = models.JSONField(default=list, blank=True, verbose_name=_("classes"))
     #: Blocked by the creator: may not sign in through the site any more.
     is_blocked = models.BooleanField(default=False, verbose_name=_("blocked"))
+    #: Sessions made before this moment are over: set when they are blocked.
+    sessions_since = models.DateTimeField(null=True, blank=True, editable=False, verbose_name=_("sessions valid since"))
     created_at = models.DateTimeField(default=timezone.now, verbose_name=_("created at"))
     last_seen_at = models.DateTimeField(null=True, blank=True, verbose_name=_("last seen at"))
 
@@ -230,6 +259,13 @@ class WebhookDelivery(models.Model):
         verbose_name_plural = _("webhook deliveries")
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["integration", "event", "subject"])]
+        constraints = [
+            # A live's news goes out once, however many processes see it happen.
+            models.UniqueConstraint(
+                fields=["integration", "event", "subject"], condition=~models.Q(event="test"),
+                name="one_delivery_per_event",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.event} → {self.url}"

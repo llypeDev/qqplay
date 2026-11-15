@@ -307,7 +307,9 @@ class PageTests(LiveTestCase):
     def test_the_embed_can_live_in_other_sites(self):
         response = self.client.get(reverse("live:embed", args=[self.live.uid]))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Content-Security-Policy"], "frame-ancestors *")
+        # Anywhere: no policy naming sites, and no X-Frame-Options at all.
+        self.assertNotIn("Content-Security-Policy", response)
+        self.assertNotIn("X-Frame-Options", response)
         self.assertNotContains(response, self.live.stream_key)
 
     def test_the_embed_plays_the_recording_once_it_is_ready(self):

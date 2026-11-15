@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>{{ live.title }} — {{ PORTAL_NAME }}</title>
+  <title>{% if named %}{{ live.title }} — {% endif %}{{ PORTAL_NAME }}</title>
   <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
   <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
   {% if layout != "player" %}<link rel="stylesheet" href="{% static 'css/app.css' %}">{% endif %}
@@ -72,6 +72,8 @@
   {% endif %}
 </head>
 <body>
+  {# The site's script waits for a word from the frame to know it is showing. #}
+  <script>if (window.parent !== window) window.parent.postMessage({ type: "qqplay:loaded" }, "*");</script>
   {% if available %}
     <div class="live-embed{% if layout != 'player' %} embed-layout embed-{{ layout }}{% endif %}" data-live data-mode="embed"
          data-state-url="{% url 'integrations:live_state' live.uid %}"
@@ -87,7 +89,8 @@
          {% if integration %}data-school="{{ integration.key }}" data-session-url="{% url 'integrations:session' %}"{% endif %}
          {% if awaiting %}data-awaiting{% endif %}
          data-sprite="{% static 'icons/sprite.svg' %}"
-         data-title="{{ live.title }}">
+         {% if frame_lang %}data-lang="{{ frame_lang }}"{% endif %}
+         data-title="{% if named %}{{ live.title }}{% endif %}">
       <script type="application/json" data-live-state>{{ state_json|safe }}</script>
       {% if layout != "chat" %}
         <div class="embed-stage">
@@ -114,7 +117,7 @@
     <div class="missing"><p>{% translate "This live is not available for embedding." %}<br><a href="{{ page_url }}" target="_blank" rel="noopener">{% blocktranslate %}Open it on {{ PORTAL_NAME }}{% endblocktranslate %}</a></p></div>
   {% endif %}
 
-  <script src="{% url 'javascript-catalog' %}"></script>
+  <script src="{% url 'javascript-catalog' %}{% if frame_lang %}?lang={{ frame_lang }}{% endif %}"></script>
   <script src="{% static 'vendor/hls.min.js' %}"></script>
   <script src="{% static 'js/player.js' %}"></script>
   <script src="{% static 'js/live.js' %}"></script>

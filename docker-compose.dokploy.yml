@@ -65,6 +65,8 @@ services:
       # Threads, so page views and the lives' polling do not queue behind
       # one another.
       GUNICORN_CMD_ARGS: "--threads 4"
+      # Dokploy's Traefik, then Caddy: two proxies in front.
+      TRUSTED_PROXY_COUNT: "2"
     networks:
       default:
         aliases:

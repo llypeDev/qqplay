@@ -180,9 +180,9 @@ class SignInTests(IntegrationTestCase):
             external_identity__isnull=False).update(is_active=False)
         self.assertEqual(self.sign_in().status_code, 403)
 
-    def test_sign_ins_are_rate_limited(self):
-        codes = {self.sign_in().status_code for _ in range(35)}
-        self.assertIn(429, codes)
+    def test_one_person_signing_in_over_and_over_is_slowed_down(self):
+        codes = [self.sign_in().status_code for _ in range(25)]
+        self.assertEqual((codes.count(200), codes.count(429)), (20, 5))
 
     def test_origins_are_normalized(self):
         self.assertEqual(normalize_origin("Escola.com.br/aulas"), "https://escola.com.br")

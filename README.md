@@ -667,6 +667,14 @@ com um aluno de teste.
    para o aluno logado, chamado de novo quando a sessão do quadro termina.
    Pelo script, `QQplay.mount(elemento, {live, layout, token, tokenUrl})`.
 
+   Em sites que trocam de página sem recarregar (React, Vue, Next), o elemento
+   pode entrar na página a qualquer momento: o script o encontra, e limpa o
+   quadro quando o elemento sai. `data-lang="en"` mostra o quadro em inglês.
+   O elemento recebe os eventos `qqplay:signed-in`, `qqplay:signed-out`,
+   `qqplay:status` (agendada, no ar, encerrada) e `qqplay:error`. Se o
+   navegador recusar o quadro (site fora da lista da integração, por
+   exemplo), o script mostra uma explicação no lugar de um quadro em branco.
+
    Um vídeo da biblioteca entra do mesmo jeito, com os comentários dele:
    `<div data-qqplay-video="ID_DO_VIDEO" data-layout="both" …>` (ou `player`,
    `comments`). Os alunos comentam, respondem e clicam no tempo de um
@@ -697,8 +705,18 @@ com um aluno de teste.
   pessoa (LGPD), mantendo as mensagens como “Pessoa removida” ou apagando tudo.
 - **Troca do segredo** com carência: o segredo antigo continua valendo por 1 h
   ou 24 h, para dar tempo de atualizar o servidor da escola, ou para na hora.
-- Os quadros só abrem dentro dos sites listados na integração
-  (`Content-Security-Policy: frame-ancestors`).
+- **Sites:** os quadros só abrem dentro dos sites listados na integração
+  (`Content-Security-Policy: frame-ancestors`). Vale `https://*.escola.com.br`
+  para todos os subdomínios e `capacitor://localhost` para um app em Capacitor
+  ou Ionic. Se a página da escola aparece dentro do quadro de outro site (um
+  construtor de páginas, um LMS), esse site também precisa estar na lista. Com
+  a lista vazia, os quadros abrem em qualquer lugar.
+- **App de celular e links:** com a opção *abrir direto* ligada, o endereço do
+  quadro pode ser aberto sozinho, com o token (`…/embed/live/ID/?layout=both&school=CHAVE&token=TOKEN`),
+  numa WebView do app da escola. O token sai do endereço assim que é usado.
+- **Diagnóstico:** a página da integração lê um token colado como a entrada
+  leria e diz o que há de errado com ele, e lista as últimas entradas
+  recusadas com o motivo e o site de onde vieram.
 
 <details>
 <summary><b>API para o servidor da escola</b></summary>
@@ -748,8 +766,11 @@ hmac.compare_digest(expected, request.headers["X-QQplay-Signature"])
 ```
 
 Uma resposta fora de 2xx é tentada de novo depois de 30 s, 2 min, 10 min e
-30 min. O botão *Enviar um teste* manda um evento `test`, e a página mostra as
-últimas entregas com o código de resposta. Os avisos só vão para endereços
+30 min, e uma entrega que falhou pode ser reenviada pela página (*Enviar de
+novo*). Durante a carência de uma troca de segredo, o cabeçalho
+`X-QQplay-Signature-Previous` traz a assinatura com o segredo antigo, para o
+servidor que ainda não trocou. O botão *Enviar um teste* manda um evento
+`test`, e a página mostra as últimas entregas com o código de resposta. Os avisos só vão para endereços
 públicos, nunca para a rede interna do servidor.
 
 </details>
@@ -776,6 +797,20 @@ públicos, nunca para a rede interna do servidor.
   para todos (o chat, sem login, fica só para leitura).
 - A foto do aluno é baixada em segundo plano só de endereços públicos (nada da
   rede interna do servidor) e passa pelo mesmo tratamento de uma foto enviada.
+- Uma turma inteira entra no mesmo minuto, muitas vezes pelo mesmo endereço de
+  rede, então entradas válidas nunca contam contra um endereço: o limite é por
+  pessoa (20 por minuto) e por entradas **recusadas** de um endereço (40 por
+  minuto). Atrás de um proxy, `TRUSTED_PROXY_COUNT` diz quantos há na frente
+  (1 com o Caddy, 2 com Traefik + Caddy; os arquivos de compose já definem),
+  para o endereço do visitante ser lido de `X-Forwarded-For`.
+- A sessão de um aluno só fala no conteúdo do dono da integração: nas lives e
+  vídeos de outros criadores ela é um visitante, que só lê o que é público.
+- A API do quadro (`/embed/api/…`) responde a qualquer origem (CORS): ela só
+  aceita a sessão no cabeçalho `Authorization`, nunca cookies, então a página
+  ou o app da própria escola pode usá-la direto.
+- Dentro de um iframe em sandbox sem origem própria (`sandbox` sem
+  `allow-same-origin`), o navegador não deixa entregar o token com segurança:
+  o script avisa e pede que o código vá na própria página.
 - O estado do chat de cada live (mensagens, reações, perguntas, mensagem
   fixada) é montado uma vez por mudança e guardado no cache, compartilhado por
   todos os alunos; uma página que já está em dia recebe só “nada mudou”, sem
@@ -847,7 +882,7 @@ E2E_PASSWORD=demo-pass-123 node tools/e2e/live.mjs
 </details>
 
 <details>
-<summary><b>Teste de ponta a ponta da integração</b> · 30 verificações</summary>
+<summary><b>Teste de ponta a ponta da integração</b> · 34 verificações</summary>
 
 <br>
 
@@ -856,7 +891,9 @@ que conecta os alunos com o segredo da integração. A integração é criada no
 estúdio, o servidor da escola agenda pela API uma live privada para uma turma,
 uma aluna e um professor conversam no chat (selo Streaming, pergunta
 respondida, mensagem fixada, modo lento, aluna silenciada e liberada), uma
-aluna de outra turma fica de fora, os dois comentam um vídeo da biblioteca e o
+aluna de outra turma fica de fora, uma aula desenhada depois do carregamento
+(site de página única) é encontrada pelo script, um endereço fora da lista de
+sites recebe a explicação, os dois comentam um vídeo da biblioteca e o
 professor oculta um comentário; no fim, o servidor da escola lê a presença,
 bloqueia a aluna e exclui os dados dela. Com `E2E_LIVE_HOOK_SECRET` (o
 `LIVE_HOOK_SECRET` do portal), a live entra no ar pela chamada do servidor de

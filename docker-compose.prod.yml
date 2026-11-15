@@ -50,6 +50,9 @@ services:
       # Threads, so page views and the lives' polling do not queue behind
       # one another.
       GUNICORN_CMD_ARGS: "--threads 4"
+      # Caddy is the one proxy in front: the visitors' own addresses come in
+      # X-Forwarded-For.
+      TRUSTED_PROXY_COUNT: "1"
     logging: *logging
 
   # The lives' push channel: an ASGI server holding the open connections of

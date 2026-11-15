@@ -179,7 +179,12 @@ class EmbedTests(TestCase):
 
     def test_embed_allows_framing(self):
         response = self.client.get(f"/embed/{self.media.uid}/")
-        self.assertEqual(response["X-Frame-Options"], "ALLOWALL")
+        # Framable anywhere: no X-Frame-Options (it has no value for that) and
+        # no policy naming sites.
+        self.assertNotIn("X-Frame-Options", response)
+        self.assertNotIn("Content-Security-Policy", response)
+        # Other pages keep refusing frames.
+        self.assertEqual(self.client.get("/")["X-Frame-Options"], "SAMEORIGIN")
 
     def test_private_media_cannot_be_embedded(self):
         response = self.client.get(f"/embed/{self.private.uid}/")

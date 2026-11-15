@@ -10,7 +10,7 @@ from django.urls import include, path, re_path
 from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import cache_control
-from django.views.i18n import JavaScriptCatalog
+from apps.core.embedding import FrameJavaScriptCatalog
 
 from apps.media.serving import serve_media
 
@@ -51,7 +51,7 @@ urlpatterns = [
     path("robots.txt", robots),
     # Language switcher (set_language) and the catalog the scripts translate with.
     path("i18n/", include("django.conf.urls.i18n")),
-    path("jsi18n/", JavaScriptCatalog.as_view(packages=["apps.core"]), name="javascript-catalog"),
+    path("jsi18n/", FrameJavaScriptCatalog.as_view(packages=["apps.core"]), name="javascript-catalog"),
     path("", include("apps.integrations.urls")),
     path("", include("apps.live.urls")),
     path("", include("apps.core.urls")),

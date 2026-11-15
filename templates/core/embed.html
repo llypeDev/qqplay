@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>{{ media.title }} — {{ PORTAL_NAME }}</title>
+  <title>{% if not awaiting %}{{ media.title }} — {% endif %}{{ PORTAL_NAME }}</title>
   <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
   <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
   {% if layout != "player" %}<link rel="stylesheet" href="{% static 'css/app.css' %}">{% endif %}
@@ -65,6 +65,8 @@
   {% endif %}
 </head>
 <body>
+  {# The site's script waits for a word from the frame to know it is showing. #}
+  <script>if (window.parent !== window) window.parent.postMessage({ type: "qqplay:loaded" }, "*");</script>
   <div class="{% if layout != 'player' %}embed-layout embed-{{ layout }}{% else %}embed-frame{% endif %}" data-media-embed
        {% if integration %}data-school="{{ integration.key }}" data-session-url="{% url 'integrations:session' %}"{% endif %}
        {% if awaiting %}data-awaiting data-info-url="{% url 'integrations:media_info' media.uid %}"{% endif %}
@@ -72,7 +74,8 @@
        data-hide-url="{% url 'integrations:media_comment_hide' media.uid '00000000-0000-0000-0000-000000000000' %}"
        data-staff-label="{% if integration.staff_label %}{{ integration.staff_label }}{% else %}{% translate 'Streaming' %}{% endif %}"
        data-sprite="{% static 'icons/sprite.svg' %}"
-       data-title="{{ media.title }}">
+       {% if frame_lang %}data-lang="{{ frame_lang }}"{% endif %}
+       data-title="{% if not awaiting %}{{ media.title }}{% endif %}">
     {% if layout != "comments" %}
       <div class="embed-stage embed-frame" data-embed-stage>
         {% if awaiting %}
@@ -138,7 +141,7 @@
     {% endif %}
   </div>
 
-  <script src="{% url 'javascript-catalog' %}"></script>
+  <script src="{% url 'javascript-catalog' %}{% if frame_lang %}?lang={{ frame_lang }}{% endif %}"></script>
   <script src="{% static 'vendor/hls.min.js' %}"></script>
   <script src="{% static 'js/player.js' %}"></script>
   {% if layout != "player" or integration %}<script src="{% static 'js/embed-comments.js' %}"></script>{% endif %}
