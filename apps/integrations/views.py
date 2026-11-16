@@ -2,6 +2,7 @@
 import hashlib
 import json
 import time
+from urllib.parse import urlsplit
 
 from django import forms
 from django.conf import settings
@@ -28,8 +29,8 @@ from apps.core.templatetags.akon import avatar
 from apps.live.models import Live
 from apps.rbac import permissions as policy
 
-from . import diagnostics, enrolments, hooks, identities, login, sessions, tokens, webhooks
-from .models import Enrolment, Integration, WebhookDelivery, new_hook_secret, normalize_origin
+from . import diagnostics, enrolments, hooks, identities, login, lti, sessions, tokens, webhooks
+from .models import Enrolment, Integration, LtiPlatform, WebhookDelivery, new_hook_secret, normalize_origin
 
 #: Sign-ins one address may attempt per minute.
 #: Refused sign-ins from one address in a minute before it has to wait: what
@@ -419,6 +420,11 @@ def studio_detail(request, pk):
             "people_found": people_found,
             "people_more": shown + PEOPLE_PAGE if people_found > shown else 0,
             "search": search,
+            "lms": list(integration.lti_platforms.all()),
+            "lti_urls": lti.tool_urls(request),
+            "lti_register_url": request.build_absolute_uri(
+                reverse("integrations:lti_register", args=[lti.registration_token(integration)])
+            ),
             "enrolments": enrolled[:enrolled_shown],
             "enrolments_count": integration.enrolments.count(),
             "enrolments_active": integration.enrolments.filter(is_active=True).count(),
@@ -681,4 +687,50 @@ def enrolments_view(request, pk):
         integration.hook_secret = new_hook_secret()
         integration.save(update_fields=["hook_secret"])
         messages.success(request, _("New address made: paste it in the platform again."))
+    return redirect(back)
+
+
+class LtiPlatformForm(forms.ModelForm):
+    """An LMS registered by hand, with what its administrator copied from it."""
+
+    deployment_id = forms.CharField(max_length=200, required=False)
+
+    class Meta:
+        model = LtiPlatform
+        fields = ["name", "issuer", "client_id", "auth_login_url", "auth_token_url", "jwks_url"]
+
+    def clean(self):
+        data = super().clean()
+        for field in ("auth_login_url", "jwks_url", "auth_token_url"):
+            value = (data.get(field) or "").strip()
+            if value and urlsplit(value).scheme not in ("https", "http"):
+                self.add_error(field, _("This must be an address starting with https://."))
+        taken = LtiPlatform.objects.filter(issuer=data.get("issuer"), client_id=data.get("client_id")).first()
+        if taken is not None:
+            self.add_error("client_id", _("This LMS and tool id are registered already."))
+        return data
+
+
+@login_required
+@require_POST
+def lms_view(request, pk):
+    """The LMSs that launch this integration (LTI 1.3): registering one by
+    hand, taking one away."""
+    integration = _mine(request, pk)
+    back = f"{reverse('integrations:detail', args=[integration.pk])}#lms"
+    if request.POST.get("action") == "remove":
+        LtiPlatform.objects.filter(pk=request.POST.get("id"), integration=integration).delete()
+        messages.success(request, _("The LMS was taken off. Launches from it stop working."))
+        return redirect(back)
+    form = LtiPlatformForm(request.POST)
+    if not form.is_valid():
+        for errors in form.errors.values():
+            messages.error(request, errors[0])
+        return redirect(back)
+    platform = form.save(commit=False)
+    platform.integration = integration
+    deployment = form.cleaned_data.get("deployment_id", "").strip()
+    platform.deployment_ids = [deployment] if deployment else []
+    platform.save()
+    messages.success(request, _("%(name)s is registered: add the tool to a course there.") % {"name": platform})
     return redirect(back)

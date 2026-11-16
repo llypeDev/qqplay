@@ -230,7 +230,12 @@
   }
 
   var top = window.parent === window;
-  if (school && sessionUrl) {
+  // Launched from an LMS, which signed the person in already.
+  var handed = null;
+  try { handed = JSON.parse(root.getAttribute("data-handoff") || "null"); } catch (e) { /* not there */ }
+  if (handed && handed.session) {
+    adopt(handed.session, handed.user);
+  } else if (school && sessionUrl) {
     window.addEventListener("message", function (event) {
       if (event.source !== window.parent || !event.data) return;
       if (event.data.type === "qqplay:token") {

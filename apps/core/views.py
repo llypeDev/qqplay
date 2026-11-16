@@ -514,9 +514,12 @@ def embed(request, uid: str):
 
     chapters = list(media.chapters.all())
     language = language_from(request.GET.get("lang"))
+    handoff = getattr(request, "lti_handoff", None)
     context = {
         "media": media,
         "frame_lang": language or "",
+        # Someone an LMS signed in (apps.integrations.lti): their session.
+        "handoff": json.dumps(handoff) if handoff else "",
         "available": available,
         "awaiting": awaiting,
         "layout": layout,
@@ -537,8 +540,9 @@ def embed(request, uid: str):
     }
     with translation.override(language) if language else contextlib.nullcontext():
         response = render(request, "core/embed.html", context)
-    # Embeds are designed to live inside other sites; a school's only in its own.
-    return allow_framing(response, integration)
+    # Embeds are designed to live inside other sites; a school's only in its
+    # own, and one an LMS launched in that LMS, which signed the launch.
+    return allow_framing(response, None if handoff else integration)
 
 
 @login_required

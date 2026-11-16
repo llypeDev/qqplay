@@ -270,6 +270,75 @@ def qqplay_token(student):
         {% endif %}
       </section>
 
+      {# ---------------------------------------------------------------- lms #}
+      <section class="panel" id="lms">
+        <div class="panel-head">
+          <h2><span class="panel-title-icon">{% icon "link" %}</span>{% translate "Inside your LMS" %}</h2>
+          <span class="muted">LTI 1.3</span>
+        </div>
+        <p class="muted">{% blocktranslate %}Moodle, Canvas, Blackboard, Brightspace, Schoology, Sakai and Open edX open {{ PORTAL_NAME }} as an activity of a course. Students arrive already signed in by the LMS, teachers there moderate here, and a live for some classes opens to the courses named like them.{% endblocktranslate %}</p>
+
+        <h3 class="panel-sub">{% translate "The quick way" %}</h3>
+        <p class="muted small">{% translate "Where the LMS registers tools from an address (Moodle: Site administration › Plugins › External tool › Manage tools, “Tool URL”), paste this one. It is good for a week." %}</p>
+        <div class="copy-field">
+          <input class="input mono" id="lti-register-url" readonly value="{{ lti_register_url }}" aria-label="{% translate 'Registration address' %}">
+          <button type="button" class="btn" data-copy-target="#lti-register-url" data-copied="{% translate 'Address copied' %}">{% icon "copy" "icon-sm" %}{% translate "Copy" %}</button>
+        </div>
+
+        <details class="enrol-import">
+          <summary>{% icon "settings" "icon-sm" %}{% translate "Register by hand" %}</summary>
+          <p class="muted small" style="margin-top: 10px">{% translate "Give the LMS these when you add the tool there:" %}</p>
+          <ul class="api-list">
+            <li><code>{% translate "Tool / launch URL" %}</code> <span class="mono">{{ lti_urls.launch }}</span></li>
+            <li><code>{% translate "Login URL" %}</code> <span class="mono">{{ lti_urls.login }}</span></li>
+            <li><code>{% translate "Redirect URL" %}</code> <span class="mono">{{ lti_urls.launch }}</span></li>
+            <li><code>{% translate "Public keys (JWKS)" %}</code> <span class="mono">{{ lti_urls.jwks }}</span></li>
+            <li><code>{% translate "Content selection" %}</code> <span class="mono">{{ lti_urls.launch }}</span></li>
+          </ul>
+          <p class="muted small" style="margin-top: 10px">{% translate "…and write here what the LMS gives back:" %}</p>
+          <form class="form-grid" method="post" action="{% url 'integrations:lms' integration.pk %}">
+            {% csrf_token %}
+            <label class="field"><span class="field-label">{% translate "Name" %}</span>
+              <input class="input" type="text" name="name" maxlength="120" placeholder="Moodle"></label>
+            <label class="field"><span class="field-label">{% translate "Platform ID (issuer)" %}</span>
+              <input class="input mono" type="text" name="issuer" maxlength="500" required placeholder="https://moodle.escola.com.br"></label>
+            <label class="field"><span class="field-label">{% translate "Client ID" %}</span>
+              <input class="input mono" type="text" name="client_id" maxlength="200" required></label>
+            <label class="field"><span class="field-label">{% translate "Deployment ID" %} <span class="hint">{% translate "optional" %}</span></span>
+              <input class="input mono" type="text" name="deployment_id" maxlength="200"></label>
+            <label class="field"><span class="field-label">{% translate "Authentication request URL" %}</span>
+              <input class="input mono" type="url" name="auth_login_url" maxlength="500" required></label>
+            <label class="field"><span class="field-label">{% translate "Public keyset URL" %}</span>
+              <input class="input mono" type="url" name="jwks_url" maxlength="500" required></label>
+            <label class="field"><span class="field-label">{% translate "Access token URL" %} <span class="hint">{% translate "optional" %}</span></span>
+              <input class="input mono" type="url" name="auth_token_url" maxlength="500"></label>
+            <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">{% icon "plus" "icon-sm" %}{% translate "Register the LMS" %}</button></div>
+          </form>
+        </details>
+
+        {% if lms %}
+          <ul class="enrol-list">
+            {% for platform in lms %}
+              <li>
+                <span class="enrol-who">
+                  <strong>{{ platform.name|default:platform.issuer }}</strong>
+                  <span class="person-meta"><span class="mono">{{ platform.issuer }}</span> · {{ platform.client_id }}{% if platform.last_launch_at %} · {% translate "last opened" %} <time datetime="{{ platform.last_launch_at|date:'c' }}" data-local>{{ platform.last_launch_at|date:"SHORT_DATETIME_FORMAT" }}</time>{% endif %}</span>
+                </span>
+                <form method="post" action="{% url 'integrations:lms' integration.pk %}" data-confirm="{% translate 'Take this LMS off? Its activities stop opening.' %}" data-confirm-tone="danger">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="remove">
+                  <input type="hidden" name="id" value="{{ platform.pk }}">
+                  <button class="btn btn-ghost btn-sm" type="submit" title="{% translate 'Take off' %}" aria-label="{% translate 'Take off' %}">{% icon "trash" "icon-sm" %}</button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted small" style="margin-top: 12px">{% translate "No LMS registered yet." %}</p>
+        {% endif %}
+        <p class="muted small">{% blocktranslate %}In the course, the teacher adds the tool as an activity and picks the live or the video. Without that step, the tool's address can end in <code>?live=ID</code> or <code>?video=ID</code>.{% endblocktranslate %}</p>
+      </section>
+
       {# ---------------------------------------------------------- the people #}
       <section class="panel panel-flush" id="people">
         <div class="panel-head" style="padding: 18px 20px 0">

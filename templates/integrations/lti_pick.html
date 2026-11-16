@@ -1,0 +1,37 @@
+{% extends "integrations/lti_base.html" %}{% load i18n %}
+{% block body %}
+  <form class="lti-card wide" method="post" action="{% url 'integrations:lti_deeplink' %}">
+    <input type="hidden" name="token" value="{{ token }}">
+    <h1>{% translate "What will this activity show?" %}</h1>
+    <p>{% blocktranslate %}Lives and videos of {{ school }} on {{ PORTAL_NAME }}. Students open it already signed in by your LMS.{% endblocktranslate %}</p>
+    {% if lives %}
+      <h2>{% translate "Lives" %}</h2>
+      <ul class="lti-list">
+        {% for live in lives %}
+          <li><label><input type="radio" name="item" value="live:{{ live.uid }}" required> <span>{{ live.title }}</span> <small>{{ live.get_status_display }}</small></label></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if videos %}
+      <h2>{% translate "Videos" %}</h2>
+      <ul class="lti-list">
+        {% for video in videos %}
+          <li><label><input type="radio" name="item" value="video:{{ video.uid }}" required> <span>{{ video.title }}</span> <small>{{ video.duration_label }}</small></label></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if not lives and not videos %}
+      <p>{% translate "There is nothing to pick yet: create a live or upload a video first." %}</p>
+    {% else %}
+      <div class="lti-row">
+        <label>{% translate "Show" %}
+          <select name="layout">
+            <option value="both">{% translate "with the chat or the comments" %}</option>
+            <option value="player">{% translate "only the player" %}</option>
+          </select>
+        </label>
+        <button type="submit">{% translate "Add to the course" %}</button>
+      </div>
+    {% endif %}
+  </form>
+{% endblock %}

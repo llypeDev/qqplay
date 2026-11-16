@@ -1,0 +1,10 @@
+{% extends "integrations/lti_base.html" %}{% load i18n %}
+{% block body %}
+  {# The answer to the LMS goes as a form its own address receives. #}
+  <form class="lti-card" method="post" action="{{ action }}" id="lti-back">
+    {% for name, value in fields.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <h1>{% translate "Going back to your course…" %}</h1>
+    <noscript><button type="submit">{% translate "Continue" %}</button></noscript>
+  </form>
+  <script>document.getElementById("lti-back").submit();</script>
+{% endblock %}

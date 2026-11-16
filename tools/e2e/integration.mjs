@@ -33,8 +33,14 @@
 // EMAIL_FILE_PATH=<dir> in development) adds the school with no server of its
 // own: a student enrolled by e-mail opens the class link, signs in with the
 // code from the e-mail, stays signed in after a reload, and loses the access
-// when the sales platform posts a refund.
-import { createHmac } from "node:crypto";
+// when the sales platform posts a refund. E2E_LTI=1 (with the portal started
+// with LTI_ALLOW_LOCAL_PLATFORMS=1, a development setting) adds an LMS: the
+// same Node server plays one that launches the portal as an LTI 1.3 tool,
+// with a key pair of its own; a student and a teacher open the activity from
+// a course page, a student of another course is kept out, and the teacher
+// picks the live in the content selection, which the LMS checks against the
+// portal's public keys.
+import { createHmac, createPublicKey, generateKeyPairSync, sign as rsaSign, verify as rsaVerify } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -52,6 +58,7 @@ const SCHOOL = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.E2E_SHOTS || "";
 const INSECURE = process.env.E2E_INSECURE_TLS === "1";
 const MAIL_DIR = process.env.E2E_MAIL_DIR || "";
+const LTI = process.env.E2E_LTI === "1";
 const stamp = Date.now().toString(36);
 const WAIT = 30000; // a poll of a scheduled live comes every 10 s
 
@@ -96,6 +103,75 @@ const PEOPLE = {
   bia: { id: `bia-${stamp}`, name: "Bia Lima", classes: ["turma-z"] },
 };
 
+// ------------------------------------------------------------------ the LMS
+
+const LMS = { ...generateKeyPairSync("rsa", { modulusLength: 2048 }), kid: "e2e-lms-key", client: "e2e-client", added: "" };
+const LMS_ISSUER = `${SCHOOL}/lms`;
+const LTI_CLAIM = "https://purl.imsglobal.org/spec/lti/claim/";
+const LMS_PEOPLE = {
+  ana: { sub: "lms-ana", name: "Ana do Moodle", roles: ["http://purl.imsglobal.org/vocab/lis/v2/membership#Learner"], course: "turma-a" },
+  rui: { sub: "lms-rui", name: "Prof. Rui do Moodle", roles: ["http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor"], course: "turma-a" },
+  bia: { sub: "lms-bia", name: "Bia do Moodle", roles: ["http://purl.imsglobal.org/vocab/lis/v2/membership#Learner"], course: "turma-z" },
+};
+
+function lmsToken(claims) {
+  const head = b64({ alg: "RS256", typ: "JWT", kid: LMS.kid });
+  const body = b64(claims);
+  return `${head}.${body}.${rsaSign("RSA-SHA256", Buffer.from(`${head}.${body}`), LMS.privateKey).toString("base64url")}`;
+}
+
+/* What the LMS answers at its own addresses; null when the address is not its. */
+async function lms(url, state) {
+  const html = (body) => ({ status: 200, type: "text/html; charset=utf-8", body: `<!doctype html><meta charset="utf-8"><body style="margin:0;font:15px system-ui">${body}</body>` });
+  if (url.pathname === "/lms/jwks") {
+    return { status: 200, type: "application/json", body: JSON.stringify({ keys: [{ ...LMS.publicKey.export({ format: "jwk" }), kid: LMS.kid, alg: "RS256", use: "sig" }] }) };
+  }
+  if (url.pathname === "/lms/course" || url.pathname === "/lms/add") {
+    // A course page: the activity opens in a frame, starting at the tool's login.
+    const hint = JSON.stringify({ who: url.searchParams.get("who"), live: url.pathname === "/lms/course" ? state.live : "", pick: url.pathname === "/lms/add" });
+    const login = `${BASE}/lti/login/?` + new URLSearchParams({ iss: LMS_ISSUER, login_hint: url.searchParams.get("who"), client_id: LMS.client,
+      target_link_uri: `${BASE}/lti/launch/`, lti_message_hint: hint });
+    return html(`<h1 style="margin:12px 20px;font-size:18px">Moodle de teste · Física</h1><iframe name="tool" src="${login}" style="display:block;width:100%;height:640px;border:0" allow="autoplay; fullscreen"></iframe>`);
+  }
+  if (url.pathname === "/lms/auth") {
+    // The LMS's authentication address: it signs the launch and posts it to the tool.
+    const hint = JSON.parse(url.searchParams.get("lti_message_hint") || "{}");
+    const person = LMS_PEOPLE[hint.who];
+    if (!person || url.searchParams.get("client_id") !== LMS.client) return { status: 400, type: "text/plain", body: "bad request" };
+    const now = Math.floor(Date.now() / 1000);
+    const claims = {
+      iss: LMS_ISSUER, aud: LMS.client, sub: person.sub, name: person.name, iat: now, exp: now + 120, nonce: url.searchParams.get("nonce"),
+      [LTI_CLAIM + "version"]: "1.3.0", [LTI_CLAIM + "deployment_id"]: "1", [LTI_CLAIM + "roles"]: person.roles,
+      [LTI_CLAIM + "context"]: { id: `course-${person.course}`, label: person.course, title: "Física" },
+      [LTI_CLAIM + "resource_link"]: { id: "activity-1" }, [LTI_CLAIM + "target_link_uri"]: `${BASE}/lti/launch/`,
+      [LTI_CLAIM + "launch_presentation"]: { locale: "pt-BR", document_target: "iframe" },
+    };
+    if (hint.pick) {
+      claims[LTI_CLAIM + "message_type"] = "LtiDeepLinkingRequest";
+      claims["https://purl.imsglobal.org/spec/lti-dl/claim/deep_linking_settings"] = { deep_link_return_url: `${SCHOOL}/lms/return`, data: "from-the-lms", accept_types: ["ltiResourceLink"] };
+    } else {
+      claims[LTI_CLAIM + "message_type"] = "LtiResourceLinkRequest";
+      claims[LTI_CLAIM + "custom"] = { qqplay_live: hint.live };
+    }
+    return html(`<form id="f" method="post" action="${url.searchParams.get("redirect_uri")}"><input type="hidden" name="id_token" value="${lmsToken(claims)}"><input type="hidden" name="state" value="${url.searchParams.get("state")}"></form><script>document.getElementById("f").submit()</script>`);
+  }
+  return null;
+}
+
+/* The tool's answer to a content selection, checked as an LMS checks it:
+   against the tool's published keys. Returns what was added. */
+async function lmsAccept(form) {
+  const signed = form.get("JWT") || "";
+  const [head, body, signature] = signed.split(".");
+  const { keys } = await (await fetch(`${BASE}/lti/jwks/`)).json();
+  const jwk = keys.find((key) => key.kid === JSON.parse(Buffer.from(head, "base64url")).kid);
+  if (!jwk || !rsaVerify("RSA-SHA256", Buffer.from(`${head}.${body}`), createPublicKey({ key: jwk, format: "jwk" }), Buffer.from(signature, "base64url"))) return "BAD SIGNATURE";
+  const claims = JSON.parse(Buffer.from(body, "base64url"));
+  const item = (claims["https://purl.imsglobal.org/spec/lti-dl/claim/content_items"] || [])[0] || {};
+  if (claims.iss !== LMS.client || claims.aud !== LMS_ISSUER || claims["https://purl.imsglobal.org/spec/lti-dl/claim/data"] !== "from-the-lms") return "BAD CLAIMS";
+  return `ADDED ${item.type} ${(item.custom || {}).qqplay_live}`;
+}
+
 function school(state) {
   const page = (title, widget) => `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -111,13 +187,21 @@ function school(state) {
 <main><h1>${title}</h1>${widget}</main>
 <script src="${BASE}/embed/sdk.js" async></script></body></html>`;
 
-  return createServer((request, response) => {
+  return createServer(async (request, response) => {
     const url = new URL(request.url, SCHOOL);
     const who = PEOPLE[url.searchParams.get("who")] ? url.searchParams.get("who") : "";
     const send = (status, type, body) => {
       response.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store" });
       response.end(body);
     };
+    if (url.pathname === "/lms/return" && request.method === "POST") {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      LMS.added = await lmsAccept(new URLSearchParams(Buffer.concat(chunks).toString()));
+      return send(200, "text/html; charset=utf-8", `<!doctype html><p id="added">${LMS.added}</p>`);
+    }
+    const fromLms = url.pathname.startsWith("/lms/") ? await lms(url, state) : null;
+    if (fromLms) return send(fromLms.status, fromLms.type, fromLms.body);
     if (url.pathname === "/token" && who) {
       const person = PEOPLE[who];
       const now = Math.floor(Date.now() / 1000);
@@ -409,6 +493,61 @@ async function main() {
       "the teacher hides the comment, for everyone");
     await anaVideo.context.close();
     await ruiVideo.context.close();
+
+    // ------------------------------------------------ inside an LMS (LTI 1.3)
+    if (LTI) {
+      await studio.goto(detailUrl);
+      await studio.locator("#lms details summary").click();
+      const lmsForm = studio.locator('#lms form', { has: studio.locator('input[name="issuer"]') });
+      await lmsForm.locator('input[name="name"]').fill("Moodle de teste");
+      await lmsForm.locator('input[name="issuer"]').fill(LMS_ISSUER);
+      await lmsForm.locator('input[name="client_id"]').fill(LMS.client);
+      await lmsForm.locator('input[name="auth_login_url"]').fill(`${SCHOOL}/lms/auth`);
+      await lmsForm.locator('input[name="jwks_url"]').fill(`${SCHOOL}/lms/jwks`);
+      await Promise.all([studio.waitForNavigation(), lmsForm.locator('button[type="submit"]').click()]);
+      expect(await studio.locator("#lms .enrol-list li").filter({ hasText: LMS_ISSUER }).count() === 1, "the studio registers an LMS for the integration");
+
+      const course = async (who, path = "course") => {
+        const context = await browser.newContext({ viewport: { width: 1280, height: 860 }, ignoreHTTPSErrors: INSECURE });
+        const page = await context.newPage();
+        watchErrors(page, errors);
+        await page.goto(`${SCHOOL}/lms/${path}?who=${who}`);
+        return { context, page, tool: page.frameLocator('iframe[name="tool"]') };
+      };
+
+      const anaLms = await course("ana");
+      await signedIn(anaLms.tool, "Ana do Moodle");
+      expect(true, "a student opens the activity in the LMS and is signed in by it: no token, no code");
+      await anaLms.tool.locator("[data-chat-form] textarea").fill("Vim pelo Moodle!");
+      await anaLms.tool.locator('[data-chat-form] button[type="submit"]').click();
+      await anaLms.tool.locator(".chat-list .chat-msg").filter({ hasText: "Vim pelo Moodle!" }).waitFor();
+      expect(true, "...and talks in the chat of the private live of their course");
+      await shot(anaLms.page, "integration-lms");
+
+      const ruiLms = await course("rui");
+      await signedIn(ruiLms.tool, "Prof. Rui do Moodle");
+      await ruiLms.tool.locator("[data-chat-mod]:not([hidden])").waitFor({ timeout: WAIT });
+      expect(true, "a teacher in the LMS is a moderator here");
+
+      const biaLms = await course("bia");
+      const closed = biaLms.tool.locator("[data-awaiting-title]");
+      await closed.waitFor({ timeout: WAIT });
+      await biaLms.tool.locator("[data-awaiting-text]").filter({ hasNotText: /^$/ }).first().waitFor({ timeout: WAIT });
+      await biaLms.page.waitForTimeout(6000);
+      expect(await biaLms.tool.locator(".chat-msg").count() === 0 && await biaLms.tool.locator("[data-chat-form]").isHidden(),
+        "a student of another course is kept out of the class's live");
+      await biaLms.context.close();
+
+      const adding = await course("rui", "add");
+      await adding.tool.locator(`input[name="item"][value="live:${state.live}"]`).check({ timeout: WAIT });
+      await adding.tool.locator('button[type="submit"]').click();
+      await adding.tool.locator("#added").waitFor({ timeout: WAIT });
+      expect((await adding.tool.locator("#added").textContent()) === `ADDED ltiResourceLink ${state.live}`,
+        "the teacher picks the live in the content selection, and the LMS accepts the tool's signed answer");
+      await adding.context.close();
+      await anaLms.context.close();
+      await ruiLms.context.close();
+    }
 
     // ------------------------------------------------ a school with no server of its own
     if (MAIL_DIR) {

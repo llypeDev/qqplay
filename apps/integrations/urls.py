@@ -2,7 +2,7 @@ from django.urls import path
 
 from apps.live import views as live_views
 
-from . import api, hooks, media_api, views
+from . import api, hooks, lti_views, media_api, views
 from .sessions import embed_api
 
 app_name = "integrations"
@@ -55,6 +55,12 @@ urlpatterns = [
     path("api/integrations/v1/enrolments/<str:email>/", api.enrolment_detail, name="api_enrolment"),
     # purchases posted by the sales platforms (hooks.py)
     path("api/integrations/hooks/<str:key>/<str:secret>/", hooks.receive, name="purchase_hook"),
+    # launched from inside an LMS (LTI 1.3: lti.py)
+    path("lti/login/", lti_views.login, name="lti_login"),
+    path("lti/launch/", lti_views.launch, name="lti_launch"),
+    path("lti/jwks/", lti_views.jwks, name="lti_jwks"),
+    path("lti/deeplink/", lti_views.deeplink, name="lti_deeplink"),
+    path("lti/register/<str:token>/", lti_views.register, name="lti_register"),
     # the class by itself, for platforms that take a link and nothing else
     path("sala/<str:key>/<str:uid>/", views.room, {"kind": "live"}, name="room"),
     path("sala/<str:key>/v/<str:uid>/", views.room, {"kind": "video"}, name="room_video"),
@@ -80,5 +86,6 @@ urlpatterns = [
     ),
     path("studio/integrations/<uuid:pk>/check/", views.check_token, name="check_token"),
     path("studio/integrations/<uuid:pk>/enrolments/", views.enrolments_view, name="enrolments"),
+    path("studio/integrations/<uuid:pk>/lms/", views.lms_view, name="lms"),
     path("studio/integrations/<uuid:pk>/people/<int:person_id>/", views.person, name="person"),
 ]

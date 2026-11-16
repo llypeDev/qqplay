@@ -967,6 +967,14 @@
   LivePage.prototype.bootSchool = function () {
     var self = this;
     var top = window.parent === window;
+    // Launched from an LMS, which signed the person in already.
+    var handed = null;
+    try { handed = JSON.parse(this.root.getAttribute("data-handoff") || "null"); } catch (e) { /* not there */ }
+    if (handed && handed.session) {
+      if (this.awaiting) each(this.root, "[data-chat-when]", function (node) { node.hidden = true; });
+      this.adopt(handed.session, handed.user);
+      return;
+    }
     if (this.awaiting) each(this.root, "[data-chat-when]", function (node) { node.hidden = true; });
     window.addEventListener("message", function (event) {
       if (event.source !== window.parent || !event.data) return;
