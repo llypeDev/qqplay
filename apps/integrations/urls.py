@@ -2,7 +2,7 @@ from django.urls import path
 
 from apps.live import views as live_views
 
-from . import api, media_api, views
+from . import api, hooks, media_api, views
 from .sessions import embed_api
 
 app_name = "integrations"
@@ -12,6 +12,10 @@ urlpatterns = [
     # chat with the session in a header (see sessions.py)
     path("embed/sdk.js", views.sdk, name="sdk"),
     path("embed/api/session/", views.session, name="session"),
+    # signing in without a token: a code by e-mail, or the platform's word
+    path("embed/api/login/start/", views.login_start, name="login_start"),
+    path("embed/api/login/verify/", views.login_verify, name="login_verify"),
+    path("embed/api/login/declared/", views.login_declared, name="login_declared"),
     path("embed/api/live/<str:uid>/state/", embed_api(live_views.state), name="live_state"),
     path("embed/api/live/<str:uid>/chat/", embed_api(live_views.chat_post), name="live_chat"),
     path(
@@ -47,6 +51,13 @@ urlpatterns = [
     path("api/integrations/v1/lives/<str:uid>/end/", api.live_end, name="api_live_end"),
     path("api/integrations/v1/lives/<str:uid>/attendance/", api.live_attendance, name="api_live_attendance"),
     path("api/integrations/v1/videos/", api.videos, name="api_videos"),
+    path("api/integrations/v1/enrolments/", api.enrolment_list, name="api_enrolments"),
+    path("api/integrations/v1/enrolments/<str:email>/", api.enrolment_detail, name="api_enrolment"),
+    # purchases posted by the sales platforms (hooks.py)
+    path("api/integrations/hooks/<str:key>/<str:secret>/", hooks.receive, name="purchase_hook"),
+    # the class by itself, for platforms that take a link and nothing else
+    path("sala/<str:key>/<str:uid>/", views.room, {"kind": "live"}, name="room"),
+    path("sala/<str:key>/v/<str:uid>/", views.room, {"kind": "video"}, name="room_video"),
     # Ids are whatever the site uses, slashes included.
     path("api/integrations/v1/students/<path:external_id>/block/", api.student, {"action": "block"}, name="api_student_block"),
     path(
@@ -68,5 +79,6 @@ urlpatterns = [
         name="webhook_resend",
     ),
     path("studio/integrations/<uuid:pk>/check/", views.check_token, name="check_token"),
+    path("studio/integrations/<uuid:pk>/enrolments/", views.enrolments_view, name="enrolments"),
     path("studio/integrations/<uuid:pk>/people/<int:person_id>/", views.person, name="person"),
 ]

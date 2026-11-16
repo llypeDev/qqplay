@@ -28,9 +28,14 @@
 // E2E_SHOTS=<dir> for screenshots; E2E_INSECURE_TLS=1 against a local HTTPS
 // stack whose certificate the browser does not trust (Caddy's own, for
 // PORTAL_DOMAIN=localhost), with NODE_TLS_REJECT_UNAUTHORIZED=0 for the API
-// calls.
+// calls. E2E_MAIL_DIR=<dir> where the portal writes its e-mails as files
+// (EMAIL_BACKEND=django.core.mail.backends.filebased.EmailBackend with
+// EMAIL_FILE_PATH=<dir> in development) adds the school with no server of its
+// own: a student enrolled by e-mail opens the class link, signs in with the
+// code from the e-mail, stays signed in after a reload, and loses the access
+// when the sales platform posts a refund.
 import { createHmac } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -46,6 +51,7 @@ const PORT = Number(process.env.E2E_SCHOOL_PORT || 8765);
 const SCHOOL = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.E2E_SHOTS || "";
 const INSECURE = process.env.E2E_INSECURE_TLS === "1";
+const MAIL_DIR = process.env.E2E_MAIL_DIR || "";
 const stamp = Date.now().toString(36);
 const WAIT = 30000; // a poll of a scheduled live comes every 10 s
 
@@ -166,6 +172,20 @@ async function hook(event, state) {
     body: new URLSearchParams({ name, key, addr: "127.0.0.1" }).toString(),
   });
   return response.status;
+}
+
+/* The sign-in code in the newest e-mail written after a moment. */
+async function codeFromMail(since) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const files = readdirSync(MAIL_DIR).map((name) => join(MAIL_DIR, name))
+      .filter((path) => statSync(path).mtimeMs >= since).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+    for (const path of files) {
+      const found = readFileSync(path, "utf8").match(/^\s{4}(\d{6})\s*$/m);
+      if (found) return found[1];
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  fail("no e-mail with a code arrived");
 }
 
 // ---------------------------------------------------------------- helpers
@@ -389,6 +409,63 @@ async function main() {
       "the teacher hides the comment, for everyone");
     await anaVideo.context.close();
     await ruiVideo.context.close();
+
+    // ------------------------------------------------ a school with no server of its own
+    if (MAIL_DIR) {
+      const bia = `bia-${stamp}@escola.example.com`;
+      await studio.goto(detailUrl);
+      const options = studio.locator('#enrolments form', { has: studio.locator('input[name="email_login"]') });
+      await options.locator('input[name="email_login"]').check();
+      await Promise.all([studio.waitForNavigation(), options.locator('button[type="submit"]').click()]);
+      const enrol = studio.locator("#enrolments form.enrol-form");
+      await enrol.locator('input[name="email"]').fill(bia);
+      await enrol.locator('input[name="name"]').fill("Bia Castro");
+      await enrol.locator('input[name="classes"]').fill("turma-a");
+      await Promise.all([studio.waitForNavigation(), enrol.locator('button[type="submit"]').click()]);
+      expect(await studio.locator("#enrolments .enrol-list li").filter({ hasText: bia }).count() === 1,
+        "the studio turns the sign-in by e-mail on and enrols a student");
+      const hookUrl = await studio.inputValue("#hook-url");
+
+      // The class link, opened as a page: no school site around it.
+      const alone = await browser.newContext({ viewport: { width: 1280, height: 860 }, ignoreHTTPSErrors: INSECURE });
+      const room = await alone.newPage();
+      watchErrors(room, errors);
+      await room.goto(`${BASE}/sala/${state.key}/${state.live}/`);
+      const door = room.locator("[data-email-login]:visible").first();
+      await door.waitFor({ timeout: WAIT });
+      expect(await room.locator(".chat-msg").count() === 0, "the class link shows a private live's closed door and asks for the e-mail");
+      const asked = Date.now() - 1000;
+      await door.locator('input[name="email"]').fill(bia);
+      await door.locator('[data-login-step="email"] button[type="submit"]').click();
+      await door.locator('input[name="code"]').waitFor({ state: "visible", timeout: WAIT });
+      await door.locator('input[name="code"]').fill(await codeFromMail(asked));
+      await door.locator('[data-login-step="code"] button[type="submit"]').click();
+      await room.locator("[data-chat-who] strong").filter({ hasText: "Bia Castro" }).waitFor({ timeout: WAIT });
+      expect(true, "the code from the e-mail signs the student in, by name");
+      await room.locator("[data-chat-form] textarea").fill("Entrei pelo link!");
+      await room.locator('[data-chat-form] button[type="submit"]').click();
+      await room.locator(".chat-list .chat-msg").filter({ hasText: "Entrei pelo link!" }).waitFor();
+      expect(true, "...and they talk in the chat");
+      await shot(room, "integration-class-link");
+
+      await room.reload();
+      await room.locator("[data-chat-who] strong").filter({ hasText: "Bia Castro" }).waitFor({ timeout: WAIT });
+      expect(await room.locator("[data-email-login]:visible").count() === 0, "a reload keeps them signed in: no new code");
+
+      // The sales platform posts a refund: the access ends.
+      const refund = await fetch(hookUrl, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "PURCHASE_REFUNDED", data: { buyer: { email: bia } } }) });
+      expect(refund.status === 200 && (await refund.json()).result === "removed", "a refund posted by the sales platform ends the access");
+      await room.locator("[data-email-login]:visible").first().waitFor({ timeout: WAIT });
+      expect(true, "...and the student is back at the door");
+
+      const bought = await fetch(`${hookUrl}?classes=turma-a`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "PURCHASE_APPROVED", data: { buyer: { email: `leo-${stamp}@escola.example.com`, name: "Leo Park" } } }) });
+      const listed = await api(state, "GET", `enrolments/?q=leo-${stamp}`);
+      expect((await bought.json()).result === "added" && listed.data.total === 1 && listed.data.enrolments[0].classes[0] === "turma-a",
+        "an approved purchase enrols the buyer in the product's class");
+      await alone.close();
+    }
 
     // ------------------------------------------------ blocking and erasing
     const blocked = await api(state, "POST", `students/${PEOPLE.ana.id}/block/`);

@@ -37,6 +37,10 @@ def new_secret() -> str:
     return secrets.token_urlsafe(32)
 
 
+def new_hook_secret() -> str:
+    return secrets.token_urlsafe(24)
+
+
 WEB_SCHEMES = ("http", "https")
 #: Mobile apps made with Capacitor or Ionic serve their pages from these
 #: (capacitor://localhost on iOS), so a school can list its app as a site.
@@ -96,6 +100,20 @@ class Integration(models.Model):
     allow_direct = models.BooleanField(default=False, verbose_name=_("open directly (apps and links)"))
     #: Sessions made before this moment are over: set when it is turned off.
     sessions_since = models.DateTimeField(null=True, blank=True, editable=False, verbose_name=_("sessions valid since"))
+    # Schools with no server of their own to sign tokens (a members area, a
+    # course platform): the people enrolled are listed here (Enrolment) and...
+    #: ...sign in with a code sent to their e-mail, in the frame or on the
+    #: class page, or...
+    email_login = models.BooleanField(default=False, verbose_name=_("sign in with a code by e-mail"))
+    #: ...are taken at the platform's word: the e-mail its page writes into
+    #: the embed code (a merge tag), accepted for enrolled students only.
+    declared_login = models.BooleanField(default=False, verbose_name=_("trust the e-mail the platform's page gives"))
+    #: In the address the sales platforms post their purchases to (hooks.py).
+    hook_secret = models.CharField(
+        max_length=48, default=new_hook_secret, editable=False, verbose_name=_("secret of the purchases address")
+    )
+    #: The platform's own token or signing key for those posts, when it has one.
+    hook_token = models.CharField(max_length=200, blank=True, verbose_name=_("the platform's webhook token"))
     created_at = models.DateTimeField(default=timezone.now, verbose_name=_("created at"))
     last_used_at = models.DateTimeField(null=True, blank=True, verbose_name=_("last used at"))
 
@@ -269,3 +287,42 @@ class WebhookDelivery(models.Model):
 
     def __str__(self) -> str:
         return f"{self.event} → {self.url}"
+
+
+class Enrolment(models.Model):
+    """Someone enrolled at a school that has no server to sign tokens: who
+    they are is their e-mail, and the list is kept here: by hand, from a
+    spreadsheet, by the API, or by the sales platform's webhooks."""
+
+    integration = models.ForeignKey(
+        Integration, on_delete=models.CASCADE, related_name="enrolments", verbose_name=_("integration"),
+    )
+    email = models.EmailField(verbose_name=_("email address"))
+    name = models.CharField(max_length=120, blank=True, verbose_name=_("name"))
+    #: Their id on the site, when the school has one: the same person then
+    #: whether they come with a token of the site or with their e-mail.
+    external_id = models.CharField(max_length=200, blank=True, verbose_name=_("id on the site"))
+    groups = models.JSONField(default=list, blank=True, verbose_name=_("classes"))
+    is_moderator = models.BooleanField(default=False, verbose_name=_("moderator"))
+    #: Off when the access ended (a refund, a cancelled plan): they stay on
+    #: the list, and get in again if the access comes back.
+    is_active = models.BooleanField(default=True, verbose_name=_("active"))
+    #: Where the enrolment came from: manual, csv, api, or a platform's name.
+    source = models.CharField(max_length=40, blank=True, verbose_name=_("source"))
+    identity = models.OneToOneField(
+        ExternalIdentity, null=True, blank=True, on_delete=models.SET_NULL, related_name="enrolment",
+        verbose_name=_("account"),
+    )
+    created_at = models.DateTimeField(default=timezone.now, verbose_name=_("created at"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("updated at"))
+
+    class Meta:
+        verbose_name = _("enrolment")
+        verbose_name_plural = _("enrolments")
+        ordering = ["email"]
+        constraints = [
+            models.UniqueConstraint(fields=["integration", "email"], name="one_enrolment_per_email_per_site")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.email} @ {self.integration}"

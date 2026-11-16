@@ -2843,6 +2843,19 @@ button.tab { border: 0; background: none; font: inherit; cursor: pointer; }
 .check-result.is-bad { border-color: var(--danger); background: var(--danger-soft); }
 .check-claims { margin: 4px 0 0; padding: 10px 12px; overflow-x: auto; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-2); font: 12px/1.55 var(--font-mono); }
 .delivery-list form { margin: 0; }
+.enrol-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: center; }
+.enrol-form input[type="email"] { grid-column: 1 / -1; }
+.enrol-form .input { min-height: 38px; padding-top: 6px; padding-bottom: 6px; font-size: 14px; }
+.enrol-form .btn { justify-self: end; }
+.enrol-import { margin: 12px 0 0; font-size: 13.5px; }
+.enrol-import summary { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-weight: 600; cursor: pointer; }
+.enrol-import form { margin-top: 10px; }
+.enrol-search { padding: 14px 0 0; }
+.enrol-list { margin: 12px 0 0; padding: 0; list-style: none; }
+.enrol-list > li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.enrol-list > li.is-off .enrol-who { opacity: 0.6; }
+.enrol-who { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.enrol-list form { display: inline-flex; gap: 4px; margin: 0; }
 .people-list { margin: 14px 0 0; padding: 0; list-style: none; }
 .people-list > li { padding: 14px 22px; border-top: 1px solid var(--line); }
 .people-list > li.is-blocked .user-cell { opacity: 0.6; }

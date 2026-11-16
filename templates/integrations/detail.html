@@ -155,6 +155,121 @@ def qqplay_token(student):
         </ol>
       </section>
 
+      {# ------------------------------------------------------- the enrolments #}
+      <section class="panel" id="enrolments">
+        <div class="panel-head">
+          <h2><span class="panel-title-icon">{% icon "users" %}</span>{% translate "No server of your own?" %}</h2>
+          <span class="muted">{% blocktranslate count counter=enrolments_active %}{{ counter }} enrolled{% plural %}{{ counter }} enrolled{% endblocktranslate %}</span>
+        </div>
+        <p class="muted">{% blocktranslate %}If your school runs on a members area or a course platform (Hotmart, Kiwify, Memberkit, Cademí…), there is no server to sign tokens. List who is enrolled here instead, and they sign in with a code sent to their e-mail: once per browser, not at every class.{% endblocktranslate %}</p>
+
+        <form class="form-grid" method="post" action="{% url 'integrations:enrolments' integration.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="options">
+          <label class="check"><input type="checkbox" name="email_login" value="1"{% if integration.email_login %} checked{% endif %}> {% translate "Enrolled people sign in with a code by e-mail" %}</label>
+          <label class="check"><input type="checkbox" name="declared_login" value="1"{% if integration.declared_login %} checked{% endif %}> {% translate "Trust the e-mail the platform's page writes into the code (students only)" %}</label>
+          <span class="field-help">{% blocktranslate %}For platforms that fill in who is signed in, such as <code>data-email="&#123;&#123;user.email&#125;&#125;"</code> on Memberkit. Nobody types anything, but the page's word is not proof: someone who knows a classmate's e-mail could write as them. Teachers are always asked for a code.{% endblocktranslate %}</span>
+          <label class="field">
+            <span class="field-label">{% translate "The platform's webhook token" %} <span class="hint">{% translate "optional" %}</span></span>
+            <input class="input mono" type="text" name="hook_token" maxlength="200" value="{{ integration.hook_token }}" autocomplete="off">
+            <span class="field-help">{% translate "Where the platform gives one for its webhooks, it is checked on every purchase posted to the address below." %}</span>
+          </label>
+          <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">{% icon "check" "icon-sm" %}{% translate "Save" %}</button></div>
+        </form>
+
+        <h3 class="panel-sub">{% translate "On the lesson's page" %}</h3>
+        {% if lives %}
+<div class="code-block"><pre id="code-enrolled"><code>&lt;div data-qqplay-live="{{ chosen }}" data-layout="both" data-school="{{ integration.key }}"&gt;&lt;/div&gt;
+&lt;script src="{{ sdk_url }}" async&gt;&lt;/script&gt;</code></pre><button type="button" class="btn btn-sm code-copy" data-copy-target="#code-enrolled" data-copied="{% translate 'Code copied' %}">{% icon "copy" "icon-sm" %}{% translate "Copy" %}</button></div>
+          <p class="muted small">{% translate "Where the platform takes a link and nothing else, give your students this one: the live and its chat fill the page." %}</p>
+          <div class="copy-field">
+            <input class="input mono" id="room-url" readonly value="{{ room_url }}" aria-label="{% translate 'Link to the class' %}">
+            <button type="button" class="btn" data-copy-target="#room-url" data-copied="{% translate 'Link copied' %}">{% icon "copy" "icon-sm" %}{% translate "Copy" %}</button>
+          </div>
+        {% else %}
+          <p class="muted small">{% translate "Create a live first: its code and its link appear here." %}</p>
+        {% endif %}
+
+        <h3 class="panel-sub">{% translate "Purchases from your sales platform" %}</h3>
+        <p class="muted small">{% blocktranslate %}Paste this address in the platform's webhook settings: an approved purchase enrols the buyer, a refund or a cancellation takes the access away. Add <code>?classes=turma-a</code> for the buyers of a product to join a class{% endblocktranslate %}{% if platforms %}{% blocktranslate with names=platforms|join:", " %}, and <code>?platform=</code> with one of: {{ names }}{% endblocktranslate %}{% endif %}.</p>
+        <div class="copy-field">
+          <input class="input mono" id="hook-url" type="password" readonly value="{{ hook_url }}" aria-label="{% translate 'Address for purchases' %}" autocomplete="off">
+          <button type="button" class="btn" data-reveal="#hook-url" aria-pressed="false" data-text-show="{% translate 'Show' %}" data-text-hide="{% translate 'Hide' %}">{% icon "eye" "icon-sm" %}<span data-reveal-label>{% translate "Show" %}</span></button>
+          <button type="button" class="btn" data-copy-target="#hook-url" data-copied="{% translate 'Address copied' %}">{% icon "copy" "icon-sm" %}{% translate "Copy" %}</button>
+        </div>
+        {% if purchases %}
+          <ul class="delivery-list">
+            {% for item in purchases %}
+              <li>
+                <span class="badge {% if item.done == 'added' or item.done == 'kept' %}badge-public{% elif item.done == 'removed' %}badge-failed{% else %}badge-role{% endif %}">{% if item.done == "added" %}{% translate "enrolled" %}{% elif item.done == "kept" %}{% translate "already enrolled" %}{% elif item.done == "removed" %}{% translate "access ended" %}{% elif item.done == "not there" %}{% translate "was not on the list" %}{% elif item.done == "no e-mail" %}{% translate "no e-mail found" %}{% else %}{% translate "ignored" %}{% endif %}</span>
+                <code>{{ item.status|default:"—" }}</code>
+                <span>{{ item.email|default:"—" }}</span>
+                <time class="muted" datetime="{{ item.at|date:'c' }}" data-local>{{ item.at|date:"SHORT_DATETIME_FORMAT" }}</time>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+
+        <h3 class="panel-sub">{% translate "Who is enrolled" %}</h3>
+        <form class="enrol-form" method="post" action="{% url 'integrations:enrolments' integration.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="add">
+          <input class="input" type="email" name="email" required maxlength="254" placeholder="{% translate 'you@email.com' %}" aria-label="{% translate 'E-mail' %}">
+          <input class="input" type="text" name="name" maxlength="120" placeholder="{% translate 'Name' %}" aria-label="{% translate 'Name' %}">
+          <input class="input" type="text" name="classes" maxlength="200" placeholder="{% translate 'Classes' %}" aria-label="{% translate 'Classes' %}">
+          <label class="check small"><input type="checkbox" name="teacher" value="1"> {% translate "teacher" %}</label>
+          <button class="btn btn-primary btn-sm" type="submit">{% icon "plus" "icon-sm" %}{% translate "Enrol" %}</button>
+        </form>
+        <details class="enrol-import">
+          <summary>{% icon "file-down" "icon-sm" %}{% translate "Import a spreadsheet" %}</summary>
+          <form class="form-grid" method="post" enctype="multipart/form-data" action="{% url 'integrations:enrolments' integration.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="import">
+            <p class="muted small">{% translate "One person per line: e-mail, name, classes, teacher. Paste the rows or choose a CSV file; a first line with the columns' names is understood. People already on the list are brought up to date." %}</p>
+            <textarea class="textarea mono" name="rows" rows="4" spellcheck="false" placeholder="ana@email.com, Ana Souza, turma-a&#10;rui@email.com, Prof. Rui, turma-a, sim"></textarea>
+            <input class="input" type="file" name="file" accept=".csv,text/csv,text/plain">
+            <div class="form-actions"><button class="btn btn-sm" type="submit">{% icon "check" "icon-sm" %}{% translate "Import" %}</button></div>
+          </form>
+        </details>
+        {% if enrolments_count > 8 or enrolment_search %}
+          <form class="people-search enrol-search" method="get" action="#enrolments">
+            <input class="input" type="search" name="eq" value="{{ enrolment_search }}" maxlength="80" placeholder="{% translate 'Search by e-mail or name' %}" aria-label="{% translate 'Search by e-mail or name' %}">
+            <button class="btn btn-sm" type="submit">{% icon "search" "icon-sm" %}{% translate "Search" %}</button>
+          </form>
+        {% endif %}
+        {% if enrolments %}
+          <ul class="enrol-list">
+            {% for person in enrolments %}
+              <li{% if not person.is_active %} class="is-off"{% endif %}>
+                <span class="enrol-who">
+                  <strong>{{ person.email }}</strong>
+                  <span class="person-meta">{{ person.name|default:"—" }}{% if person.groups %} · {{ person.groups|join:", " }}{% endif %}{% if person.source %} · {{ person.source }}{% endif %}</span>
+                </span>
+                {% if person.is_moderator %}<span class="badge badge-role">{% translate "Moderator" %}</span>{% endif %}
+                {% if not person.is_active %}<span class="badge badge-failed">{% translate "No access" %}</span>{% endif %}
+                <form method="post" action="{% url 'integrations:enrolments' integration.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="id" value="{{ person.pk }}">
+                  {% if person.is_active %}
+                    <button class="btn btn-ghost btn-sm" type="submit" name="action" value="off">{% translate "End access" %}</button>
+                  {% else %}
+                    <button class="btn btn-ghost btn-sm" type="submit" name="action" value="on">{% translate "Give access back" %}</button>
+                  {% endif %}
+                  <button class="btn btn-ghost btn-sm" type="submit" name="action" value="remove" title="{% translate 'Take off the list' %}" aria-label="{% translate 'Take off the list' %}">{% icon "trash" "icon-sm" %}</button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+          {% if enrolments_more %}
+            <p class="people-more"><a class="btn btn-sm" href="?{% if enrolment_search %}eq={{ enrolment_search|urlencode }}&amp;{% endif %}enrolled={{ enrolments_more }}#enrolments">{% translate "Show more" %}</a></p>
+          {% endif %}
+        {% elif enrolment_search %}
+          <p class="muted small">{% translate "Nobody matches the search." %}</p>
+        {% else %}
+          <p class="muted small">{% translate "Nobody is enrolled yet." %}</p>
+        {% endif %}
+      </section>
+
       {# ---------------------------------------------------------- the people #}
       <section class="panel panel-flush" id="people">
         <div class="panel-head" style="padding: 18px 20px 0">

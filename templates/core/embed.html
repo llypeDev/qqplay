@@ -63,12 +63,46 @@
       }
     </style>
   {% endif %}
+  {% if integration.email_login %}
+    <style>
+      .email-login { display: grid; gap: 8px; margin: 0; padding: 12px; text-align: left; }
+      .email-login[hidden] { display: none; }
+      .email-login-text { margin: 0; font-size: 13px; color: var(--muted, #8794a8); }
+      .email-login-row { display: flex; flex-wrap: wrap; gap: 8px; }
+      .email-login-row[hidden] { display: none; }
+      .email-login-row .input { flex: 1 1 160px; min-width: 0; min-height: 38px; padding: 6px 12px; font-size: 14px; }
+      .email-login-row .input[name="code"] { flex: 0 1 120px; letter-spacing: 0.25em; text-align: center; }
+      .email-login-note { margin: 0; font-size: 12.5px; color: var(--muted, #8794a8); }
+      .email-login-note.is-bad { color: var(--danger, #ff5c7a); }
+      .email-login.is-busy { opacity: 0.7; pointer-events: none; }
+      /* On the closed door of a private live or video. */
+      .live-screen .email-login, .embed-signin .email-login {
+        width: min(420px, 100%); margin: 14px auto 0; padding: 14px; border-radius: 12px;
+        background: rgba(255, 255, 255, 0.06); color: #e8eef6;
+      }
+      .embed-signin .email-login .input, .live-screen .email-login .input {
+        border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 10px; background: rgba(0, 0, 0, 0.35); color: #fff;
+        font: inherit; font-size: 14px;
+      }
+      .embed-signin .email-login button, .live-screen .email-login button {
+        min-height: 38px; padding: 0 14px; border: 0; border-radius: 10px; font: 600 13.5px/1 inherit; cursor: pointer;
+        background: var(--accent, #22d3ee); color: var(--accent-ink, #04121a);
+      }
+      .embed-signin .email-login [data-login-back], .live-screen .email-login [data-login-back] {
+        background: transparent; color: #c5cfdc;
+      }
+      /* On a phone the player's shape is too short for the door and its form. */
+      @media (max-width: 719px) {
+        .embed-both .embed-stage:has([data-awaiting-screen]) { aspect-ratio: auto; min-height: 330px; }
+      }
+    </style>
+  {% endif %}
 </head>
 <body>
   {# The site's script waits for a word from the frame to know it is showing. #}
   <script>if (window.parent !== window) window.parent.postMessage({ type: "qqplay:loaded" }, "*");</script>
   <div class="{% if layout != 'player' %}embed-layout embed-{{ layout }}{% else %}embed-frame{% endif %}" data-media-embed
-       {% if integration %}data-school="{{ integration.key }}" data-session-url="{% url 'integrations:session' %}"{% endif %}
+       {% if integration %}data-school="{{ integration.key }}" data-session-url="{% url 'integrations:session' %}"{% if integration.email_login %} data-login-start-url="{% url 'integrations:login_start' %}" data-login-verify-url="{% url 'integrations:login_verify' %}"{% endif %}{% if integration.declared_login %} data-login-declared-url="{% url 'integrations:login_declared' %}"{% endif %}{% endif %}
        {% if awaiting %}data-awaiting data-info-url="{% url 'integrations:media_info' media.uid %}"{% endif %}
        data-comments-url="{% url 'integrations:media_comments' media.uid %}"
        data-hide-url="{% url 'integrations:media_comment_hide' media.uid '00000000-0000-0000-0000-000000000000' %}"
@@ -83,6 +117,7 @@
             <div>
               <h2 data-awaiting-title>{% translate "Signing you in…" %}</h2>
               <p data-awaiting-text>{% blocktranslate with site=integration.name %}This video is for the people of {{ site }}.{% endblocktranslate %}</p>
+              {% if integration.email_login %}{% include "integrations/_email_login.html" %}{% endif %}
             </div>
           </div>
         {% elif media.file and media.kind == "image" %}
@@ -134,6 +169,7 @@
             <button type="submit" class="btn btn-primary btn-sm">{% icon "send" "icon-sm" %}{% translate "Comment" %}</button>
           </div>
         </form>
+        {% if integration.email_login %}{% include "integrations/_email_login.html" %}{% endif %}
         <p class="chat-note" data-comments-signin>{% if integration %}{% blocktranslate with site=integration.name %}Sign in to {{ site }} to comment.{% endblocktranslate %}{% else %}{% translate "Comments can be read here." %}{% endif %}</p>
         <ol class="comment-threads" data-comment-list></ol>
         <div class="chat-empty" data-comments-empty>{% icon "message" %}<span>{% translate "No comments yet." %}</span></div>
@@ -144,6 +180,7 @@
   <script src="{% url 'javascript-catalog' %}{% if frame_lang %}?lang={{ frame_lang }}{% endif %}"></script>
   <script src="{% static 'vendor/hls.min.js' %}"></script>
   <script src="{% static 'js/player.js' %}"></script>
+  {% if integration.email_login or integration.declared_login %}<script src="{% static 'js/embed-login.js' %}"></script>{% endif %}
   {% if layout != "player" or integration %}<script src="{% static 'js/embed-comments.js' %}"></script>{% endif %}
 </body>
 </html>

@@ -139,6 +139,7 @@ os recursos de terceiros estão listados em [Licenças](#licenças).
         <li>Chat com reações, perguntas com votos, mensagem fixada, modo lento e selo Streaming para a equipe</li>
         <li>A gravação publicada como vídeo quando a live termina, e a presença de cada aluno</li>
         <li>A live, o chat e os vídeos com comentários dentro do site da sua escola, com o login, as turmas e a cara da escola, mais API e webhooks (<a href="#integração-com-a-sua-escola">veja como</a>)</li>
+        <li>Para quem vende por Hotmart, Kiwify, Memberkit e parecidas: lista de matrículas alimentada pelos webhooks de compra, login por código no e-mail e link da aula</li>
       </ul>
     </td>
     <td width="50%" valign="top">
@@ -718,6 +719,64 @@ com um aluno de teste.
   leria e diz o que há de errado com ele, e lista as últimas entradas
   recusadas com o motivo e o site de onde vieram.
 
+### Escola sem servidor próprio
+
+Quem vende por Hotmart, Kiwify, Memberkit, Cademí e parecidas não tem um
+servidor para assinar tokens. Para essas escolas, a integração guarda uma
+**lista de matrículas** (e-mail, nome, turmas, professor) e as pessoas dela
+entram sozinhas. Tudo fica no painel *Sem servidor próprio?* da integração.
+
+- **Código por e-mail:** a pessoa digita o e-mail no quadro, recebe um código
+  de seis dígitos (vale 10 minutos) e entra. A sessão fica guardada naquele
+  navegador por 30 dias, então o código é pedido uma vez, não a cada aula. A
+  resposta a "enviar código" é a mesma para quem está e quem não está na
+  lista. Exige o envio de e-mails configurado (`EMAIL_HOST` e companhia).
+- **Na página da aula**, sem token:
+
+  ```html
+  <div data-qqplay-live="ID_DA_LIVE" data-layout="both" data-school="CHAVE"></div>
+  <script src="https://SEU_PORTAL/embed/sdk.js" async></script>
+  ```
+
+- **Link da aula:** onde a plataforma só aceita um link, use
+  `https://SEU_PORTAL/sala/CHAVE/ID_DA_LIVE/` (ou `…/sala/CHAVE/v/ID_DO_VIDEO/`):
+  a live e o chat ocupam a página, com o mesmo login por código.
+- **E-mail informado pela plataforma:** em plataformas que escrevem quem está
+  logado no código da aula (`data-email="{{user.email}}"` e
+  `data-name="{{user.full_name}}"` na Memberkit; `?email=` no endereço de um
+  iframe), a opção *confiar no e-mail da página* dispensa o código para
+  alunos matriculados. É uma escolha: a palavra da página não é prova, e
+  quem souber o e-mail de um colega poderia escrever no lugar dele. Professores
+  sempre passam pelo código.
+- **Quem alimenta a lista:** o estúdio (um a um ou por planilha CSV), a API
+  (`/api/integrations/v1/enrolments/`) e os **webhooks de compra** da
+  plataforma de vendas. Encerrar o acesso de alguém derruba a sessão na hora.
+
+**Webhooks de compra.** Cole o endereço mostrado no painel nas configurações
+de webhook da plataforma. Uma compra aprovada matricula quem comprou; reembolso,
+chargeback ou cancelamento encerra o acesso. `?classes=turma-a` no endereço
+coloca os compradores daquele produto numa turma (um endereço por produto).
+Formatos conferidos na documentação de cada plataforma:
+
+| Plataforma | `?platform=` | Token conferido (opcional) |
+| --- | --- | --- |
+| Hotmart (Webhook 2.0) | `hotmart` | cabeçalho `X-HOTMART-HOTTOK` |
+| Kiwify | `kiwify` | assinatura HMAC-SHA1 em `?signature=` |
+| Eduzz (Developer Hub) | `eduzz` | cabeçalho `x-signature` (HMAC-SHA256) |
+| Greenn | `greenn` | não documentado pela plataforma |
+| Ticto (v2) | `ticto` | campo `token` no corpo |
+| Memberkit | `memberkit` | assinatura Standard Webhooks |
+| Cademí (v3) | `cademi` | cabeçalho `Cademi-Signature` |
+| Monetizze | `monetizze` | campo `chave_unica` no corpo |
+
+Sem `?platform=`, a plataforma é reconhecida pelo cabeçalho de assinatura
+quando há um, e fora isso o e-mail e a situação são procurados onde essas
+plataformas costumam colocá-los, o que cobre formatos parecidos de outras. O
+painel mostra o que chegou e o que foi feito com cada aviso. Duas ressalvas:
+na Kiwify, os nomes dos campos do comprador não aparecem na documentação
+(vieram das entregas de teste; confira com o botão de teste dela); na Cademí,
+o e-mail só vem quando o webhook está com `payload_detail` em `full`.
+
 <details>
 <summary><b>API para o servidor da escola</b></summary>
 
@@ -738,6 +797,8 @@ lives e os vídeos dele e sobre os alunos daquela integração.
 | `GET` | `videos/` | os vídeos prontos do dono |
 | `POST` | `students/<id>/block/`, `…/unblock/` | bloqueia ou libera um aluno |
 | `DELETE` | `students/<id>/` | exclui os dados do aluno; `?keep_messages=1` mantém as mensagens anônimas |
+| `GET` `POST` | `enrolments/` | a lista de matrículas: `?q=` busca; `POST` de um `{email, name, classes, teacher, id, active}` ou de `{"enrolments": [...]}` (até 1000) adiciona ou atualiza |
+| `GET` `DELETE` | `enrolments/<e-mail>/` | lê ou tira da lista (a sessão da pessoa termina) |
 
 ```bash
 curl -X POST https://SEU_PORTAL/api/integrations/v1/lives/ \
@@ -882,7 +943,7 @@ E2E_PASSWORD=demo-pass-123 node tools/e2e/live.mjs
 </details>
 
 <details>
-<summary><b>Teste de ponta a ponta da integração</b> · 34 verificações</summary>
+<summary><b>Teste de ponta a ponta da integração</b> · 34 verificações, 42 com os e-mails</summary>
 
 <br>
 
@@ -897,7 +958,12 @@ sites recebe a explicação, os dois comentam um vídeo da biblioteca e o
 professor oculta um comentário; no fim, o servidor da escola lê a presença,
 bloqueia a aluna e exclui os dados dela. Com `E2E_LIVE_HOOK_SECRET` (o
 `LIVE_HOOK_SECRET` do portal), a live entra no ar pela chamada do servidor de
-ingestão, sem precisar do OBS.
+ingestão, sem precisar do OBS. Com `E2E_MAIL_DIR` apontando para a pasta onde
+o portal grava os e-mails (em desenvolvimento:
+`EMAIL_BACKEND=django.core.mail.backends.filebased.EmailBackend EMAIL_FILE_PATH=pasta`),
+o teste cobre também a escola sem servidor: uma aluna matriculada abre o link
+da aula, entra com o código do e-mail, continua conectada depois de recarregar
+e perde o acesso quando a plataforma de vendas avisa um reembolso.
 
 ```bash
 BASE_URL=http://127.0.0.1:8000 E2E_HOST_EMAIL=studio@example.com \

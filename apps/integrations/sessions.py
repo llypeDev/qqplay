@@ -20,7 +20,7 @@ from functools import wraps
 
 from django.contrib.auth.models import AnonymousUser
 from django.core import signing
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.utils import translation
 from django.utils.cache import patch_cache_control
 from django.views.decorators.csrf import csrf_exempt
@@ -32,6 +32,9 @@ from .models import ExternalIdentity, Integration
 SALT = "qqplay.integrations.session"
 #: A class is a few hours long; the site's script asks for a new token after.
 LIFETIME = 12 * 3600
+#: Someone who signed in with a code by e-mail is not asked for another one
+#: at every class: their session lasts this long on that browser.
+EMAIL_LIFETIME = 30 * 24 * 3600
 HEADER = "HTTP_AUTHORIZATION"
 
 
@@ -62,18 +65,21 @@ class EmbedContext:
         return bool(self.identity and self.identity.is_moderator and self.grants_live(live))
 
 
-def issue(identity: ExternalIdentity, secret_version: str = "") -> str:
+def issue(identity: ExternalIdentity, secret_version: str = "", method: str = "token", lifetime: int = LIFETIME) -> str:
     """A session for the person. It remembers which secret signed the token
     it came from, so it ends when that secret stops being accepted, and when
     it was made, so blocking the person or turning the integration off ends
-    it for good."""
+    it for good. One made without a token (``method`` "email" or "declared")
+    has nothing to do with the secret and outlives its replacement."""
     integration = identity.integration
     return signing.dumps(
         {
             "u": str(identity.user_id),
             "i": str(integration.pk),
-            "v": secret_version or integration.secret_version,
+            "v": (secret_version or integration.secret_version) if method == "token" else "",
             "t": int(time.time()),
+            "m": method,
+            "l": lifetime,
         },
         salt=SALT,
     )
@@ -81,7 +87,7 @@ def issue(identity: ExternalIdentity, secret_version: str = "") -> str:
 
 def load(token: str) -> ExternalIdentity | None:
     try:
-        data = signing.loads(token, salt=SALT, max_age=LIFETIME)
+        data = signing.loads(token, salt=SALT, max_age=EMAIL_LIFETIME)
     except signing.BadSignature:
         return None
     identity = (
@@ -93,9 +99,19 @@ def load(token: str) -> ExternalIdentity | None:
         return None
     integration = identity.integration
     versions = {Integration.version_of(secret) for secret in integration.secrets_in_force()}
-    if not integration.is_active or data.get("v") not in versions:
+    by_token = (data.get("m") or "token") == "token"
+    if not integration.is_active or (by_token and data.get("v") not in versions):
         return None
     made = data.get("t") or 0
+    # Sessions from before they carried their own length last the usual one;
+    # with no date of their own, the signature's is all there is.
+    if made and time.time() > made + (data.get("l") or LIFETIME):
+        return None
+    if not made and (data.get("l") or LIFETIME) <= LIFETIME:
+        try:
+            signing.loads(token, salt=SALT, max_age=LIFETIME)
+        except signing.BadSignature:
+            return None
     for since in (integration.sessions_since, identity.sessions_since):
         if since is not None and made < since.timestamp():
             return None
@@ -133,7 +149,13 @@ def open_to_any_origin(view):
 
     @wraps(view)
     def wrapper(request, *args, **kwargs):
-        response = HttpResponse(status=204) if request.method == "OPTIONS" else view(request, *args, **kwargs)
+        if request.method == "OPTIONS":
+            response = HttpResponse(status=204)
+        else:
+            # ...and in the language the frame is shown in.
+            language = language_from(request.META.get("HTTP_X_QQPLAY_LANG"))
+            with translation.override(language) if language else contextlib.nullcontext():
+                response = view(request, *args, **kwargs)
         for name, value in CORS_HEADERS.items():
             response[name] = value
         return response
@@ -163,9 +185,12 @@ def embed_api(view):
         else:
             request.user = AnonymousUser()
             request.embed = None
-        language = language_from(request.META.get("HTTP_X_QQPLAY_LANG"))
-        with translation.override(language) if language else contextlib.nullcontext():
+        try:
             response = view(request, *args, **kwargs)
+        except Http404:
+            # Answered here, so the note about a refused session goes with it:
+            # a private live that stops being someone's looks like this.
+            response = JsonResponse({"detail": "Not found."}, status=404)
         patch_cache_control(response, no_store=True)
         if token and identity is None:
             # The page knows to ask its site for a new token.
