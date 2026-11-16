@@ -645,6 +645,10 @@ site (por exemplo `https://escola.com.br`). Ela tem uma **chave** (pública) e u
 prontos em PHP, Node.js e Python, gera o código de cada live e abre uma prévia
 com um aluno de teste.
 
+O que ainda falta (marcar a aula como concluída e os testes que não foram
+feitos) está em
+[`docs/integracao-fases-pendentes.md`](docs/integracao-fases-pendentes.md).
+
 1. **No servidor da escola**, para o aluno logado, gere um JSON Web Token HS256
    assinado com o segredo e com a chave no cabeçalho (`kid`):
 
