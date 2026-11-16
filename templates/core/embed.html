@@ -109,6 +109,7 @@
        data-staff-label="{% if integration.staff_label %}{{ integration.staff_label }}{% else %}{% translate 'Streaming' %}{% endif %}"
        data-sprite="{% static 'icons/sprite.svg' %}"
        {% if frame_lang %}data-lang="{{ frame_lang }}"{% endif %}
+         {% if handoff %}data-handoff="{{ handoff }}"{% endif %}
        data-title="{% if not awaiting %}{{ media.title }}{% endif %}">
     {% if layout != "comments" %}
       <div class="embed-stage embed-frame" data-embed-stage>

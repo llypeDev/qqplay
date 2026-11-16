@@ -1,0 +1,7 @@
+{% extends "integrations/lti_base.html" %}{% load i18n %}
+{% block body %}
+  <div class="lti-card" role="alert">
+    <h1>{% translate "This activity could not be opened" %}</h1>
+    <p>{{ message }}</p>
+  </div>
+{% endblock %}

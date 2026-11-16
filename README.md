@@ -139,6 +139,7 @@ os recursos de terceiros estão listados em [Licenças](#licenças).
         <li>Chat com reações, perguntas com votos, mensagem fixada, modo lento e selo Streaming para a equipe</li>
         <li>A gravação publicada como vídeo quando a live termina, e a presença de cada aluno</li>
         <li>A live, o chat e os vídeos com comentários dentro do site da sua escola, com o login, as turmas e a cara da escola, mais API e webhooks (<a href="#integração-com-a-sua-escola">veja como</a>)</li>
+        <li>Ou como atividade de um curso no Moodle, Canvas e outros LMS, pelo padrão LTI 1.3: o aluno chega identificado pelo LMS (<a href="#moodle-canvas-e-outros-lms-lti-13">veja como</a>)</li>
         <li>Para quem vende por Hotmart, Kiwify, Memberkit e parecidas: lista de matrículas alimentada pelos webhooks de compra, login por código no e-mail e link da aula</li>
       </ul>
     </td>
@@ -777,6 +778,64 @@ na Kiwify, os nomes dos campos do comprador não aparecem na documentação
 (vieram das entregas de teste; confira com o botão de teste dela); na Cademí,
 o e-mail só vem quando o webhook está com `payload_detail` em `full`.
 
+### Moodle, Canvas e outros LMS (LTI 1.3)
+
+A escola que usa um LMS (Moodle, Canvas, Blackboard, Brightspace, Schoology,
+Sakai, Open edX) abre o QQplay como uma **atividade do curso**, pelo padrão
+LTI 1.3. O aluno clica na atividade e chega identificado pelo LMS: o nome, o
+e-mail e a foto vêm de lá, quem ensina no curso modera o chat e o curso é a
+turma. Não há token para assinar, script para colar nem lista de matrículas
+para manter. Tudo fica no painel *Dentro do seu LMS* da integração.
+
+1. **Cadastre o QQplay no LMS.**
+   - *Do jeito rápido* (Moodle e os LMS com cadastro automático de
+     ferramentas): copie o **endereço de cadastro** do painel e cole onde o
+     LMS pede o endereço da ferramenta. No Moodle: *Administração do site ›
+     Plugins › Módulos de atividade › Ferramenta externa › Gerenciar
+     ferramentas*, campo *URL da ferramenta*, botão **Adicionar LTI
+     Advantage**, e depois **Ativar** no cartão que aparece. O endereço vale
+     por uma semana e cadastra o LMS naquela integração.
+   - *À mão* (Canvas, Blackboard, Brightspace e os demais): informe ao LMS os
+     endereços abaixo e escreva no painel o que ele devolver (ID da
+     plataforma ou *issuer*, *Client ID*, *Deployment ID*, endereço de
+     autenticação e endereço das chaves públicas).
+
+     | No LMS | Endereço |
+     | --- | --- |
+     | URL da ferramenta, de redirecionamento e de seleção de conteúdo | `https://SEU_PORTAL/lti/launch/` |
+     | URL de início de login (OIDC) | `https://SEU_PORTAL/lti/login/` |
+     | Chaves públicas (JWKS) | `https://SEU_PORTAL/lti/jwks/` |
+
+2. **No curso**, o professor adiciona a ferramenta como atividade e, em
+   *Selecionar conteúdo*, escolhe a live ou o vídeo numa lista do que é do
+   dono da integração (Deep Linking); o título da atividade vem preenchido.
+   Onde o LMS não tem esse passo, o endereço da ferramenta pode terminar em
+   `?live=ID` ou `?video=ID`, ou a atividade pode levar os parâmetros
+   personalizados `qqplay_live=ID`, `qqplay_video=ID` e `qqplay_layout=player`.
+
+Como as regras da integração valem aqui:
+
+- **Turmas:** o curso é a turma, pelo nome curto dele (`MAT1`) e pelo id. Uma
+  live privada com turmas abre só nos cursos com aquele nome curto; sem
+  turmas, abre em qualquer curso daquele LMS.
+- **Professores:** modera quem tem, **naquele curso**, o papel de professor,
+  monitor, criador de conteúdo ou administrador, e os administradores do LMS.
+  Ser professor de outro curso da mesma escola não conta. Só eles escolhem o
+  conteúdo de uma atividade.
+- **Idioma:** o quadro segue o idioma da pessoa no LMS.
+- **Pessoas:** quem entra pelo LMS aparece na lista de pessoas da integração
+  como os demais, e pode ser bloqueado ou ter os dados excluídos.
+- **Segurança:** cada abertura é conferida: assinatura RS256 com as chaves
+  públicas do LMS, emissor, ferramenta (*Client ID*), implantação, validade e
+  uso único. O estado do login vai assinado no próprio pedido, sem depender de
+  cookies de terceiros. A chave da ferramenta é criada no primeiro uso.
+
+O que foi testado e o que não: contra um **Moodle 5.0 de verdade**, o cadastro
+automático, a seleção de conteúdo e a abertura de uma live e de um vídeo, como
+professor e como aluna, com chat e comentário enviados. Os outros LMS seguem o
+mesmo padrão, mas não foram testados aqui. Notas (LTI AGS) e lista de alunos
+(LTI NRPS) não são usadas: a presença de cada live está no estúdio e na API.
+
 <details>
 <summary><b>API para o servidor da escola</b></summary>
 
@@ -850,6 +909,10 @@ públicos, nunca para a rede interna do servidor.
   sem senha e com um e-mail que não existe. Contas nunca são ligadas pelo
   e-mail do token, então um site não consegue falar em nome de uma conta do
   portal.
+- Uma abertura por LTI (`lti.py`, `lti_views.py`) termina na mesma sessão do
+  quadro que um token do site: o LMS envia um `id_token` assinado, o portal o
+  confere e a página já nasce com a sessão, sem `postMessage` nem script da
+  escola. Por isso bloqueio, exclusão, turmas e presença funcionam igual.
 - Só páginas dos sites listados na integração conectam alunos. Desligar a
   integração, bloquear o aluno ou trocar o segredo sem carência encerra na hora
   as sessões abertas.
@@ -894,7 +957,7 @@ python manage.py test apps
 Os testes do pipeline só rodam onde o ffmpeg está instalado.
 
 <details>
-<summary><b>Teste de ponta a ponta no navegador</b> · 46 verificações</summary>
+<summary><b>Teste de ponta a ponta no navegador</b> · 45 verificações</summary>
 
 <br>
 
@@ -943,7 +1006,7 @@ E2E_PASSWORD=demo-pass-123 node tools/e2e/live.mjs
 </details>
 
 <details>
-<summary><b>Teste de ponta a ponta da integração</b> · 34 verificações, 42 com os e-mails</summary>
+<summary><b>Teste de ponta a ponta da integração</b> · 34 verificações, 42 com os e-mails, 48 com o LMS</summary>
 
 <br>
 
@@ -963,7 +1026,13 @@ o portal grava os e-mails (em desenvolvimento:
 `EMAIL_BACKEND=django.core.mail.backends.filebased.EmailBackend EMAIL_FILE_PATH=pasta`),
 o teste cobre também a escola sem servidor: uma aluna matriculada abre o link
 da aula, entra com o código do e-mail, continua conectada depois de recarregar
-e perde o acesso quando a plataforma de vendas avisa um reembolso.
+e perde o acesso quando a plataforma de vendas avisa um reembolso. Com
+`E2E_LTI=1` (e o portal iniciado com `LTI_ALLOW_LOCAL_PLATFORMS=1`, uma opção
+só de desenvolvimento que deixa o portal falar com um LMS na própria
+máquina), o mesmo servidor faz o papel de um LMS com o seu par de chaves: uma
+aluna e um professor abrem a atividade pela página do curso, uma aluna de
+outro curso fica de fora e o professor escolhe a live na seleção de conteúdo,
+cuja resposta o LMS confere com as chaves públicas do portal.
 
 ```bash
 BASE_URL=http://127.0.0.1:8000 E2E_HOST_EMAIL=studio@example.com \
@@ -1061,7 +1130,9 @@ apps/
                         sala de controle, transmissão pelo navegador (relay.py)
                         e a gravação publicada como vídeo
   integrations/         lives e chat no site de uma escola: token assinado pelo
-                        site, sessão do quadro, script de incorporação
+                        site, sessão do quadro, script de incorporação,
+                        matrículas com código por e-mail, webhooks de compra
+                        e a ferramenta LTI 1.3 para Moodle, Canvas e outros
 docker/live/            servidor de ingestão das lives (nginx + módulo RTMP)
 docker-compose.prod.yml a stack para a internet: Caddy com HTTPS, workers
                         ajustados para dois núcleos

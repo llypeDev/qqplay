@@ -326,3 +326,54 @@ class Enrolment(models.Model):
 
     def __str__(self) -> str:
         return f"{self.email} @ {self.integration}"
+
+
+class LtiKey(models.Model):
+    """The key pair this portal signs with as an LTI tool (its public half is
+    what /lti/jwks/ shows). One is made the first time it is needed."""
+
+    kid = models.CharField(max_length=40, unique=True, verbose_name=_("key id"))
+    private_pem = models.TextField(verbose_name=_("private key"))
+    created_at = models.DateTimeField(default=timezone.now, verbose_name=_("created at"))
+
+    class Meta:
+        verbose_name = _("LTI key")
+        verbose_name_plural = _("LTI keys")
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return self.kid
+
+
+class LtiPlatform(models.Model):
+    """An LMS (Moodle, Canvas, Blackboard, Brightspace…) that launches this
+    portal as an LTI 1.3 tool. Its people arrive already signed in by the
+    LMS, into the integration it was registered under: a teacher there is a
+    moderator here, and the course is the class."""
+
+    integration = models.ForeignKey(
+        Integration, on_delete=models.CASCADE, related_name="lti_platforms", verbose_name=_("integration"),
+    )
+    name = models.CharField(max_length=120, blank=True, verbose_name=_("name"))
+    #: The LMS as it names itself in its tokens (iss) and this tool there.
+    issuer = models.CharField(max_length=500, verbose_name=_("issuer"))
+    client_id = models.CharField(max_length=200, verbose_name=_("client id"))
+    #: Deployments of the tool this registration takes; empty: any.
+    deployment_ids = models.JSONField(default=list, blank=True, verbose_name=_("deployment ids"))
+    auth_login_url = models.CharField(max_length=500, verbose_name=_("authentication request address"))
+    auth_token_url = models.CharField(max_length=500, blank=True, verbose_name=_("access token address"))
+    jwks_url = models.CharField(max_length=500, verbose_name=_("public keys address"))
+    is_active = models.BooleanField(default=True, verbose_name=_("active"))
+    created_at = models.DateTimeField(default=timezone.now, verbose_name=_("created at"))
+    last_launch_at = models.DateTimeField(null=True, blank=True, verbose_name=_("last launch at"))
+
+    class Meta:
+        verbose_name = _("LMS (LTI)")
+        verbose_name_plural = _("LMSs (LTI)")
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["issuer", "client_id"], name="one_registration_per_lms_client")
+        ]
+
+    def __str__(self) -> str:
+        return self.name or self.issuer

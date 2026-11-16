@@ -1,0 +1,9 @@
+{% extends "integrations/lti_base.html" %}{% load i18n %}
+{% block body %}
+  <div class="lti-card">
+    <h1>{% translate "The tool is registered" %}</h1>
+    <p>{% blocktranslate with name=platform.name %}{{ PORTAL_NAME }} is now a tool of {{ name }}. Turn it on in the LMS, if it asks, and add it to a course.{% endblocktranslate %}</p>
+  </div>
+  {# What the LMS waits for to close this window. #}
+  <script>(window.opener || window.parent).postMessage({ subject: "org.imsglobal.lti.close" }, "*");</script>
+{% endblock %}

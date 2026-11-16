@@ -14,3 +14,9 @@ EMAIL_FILE_PATH = env("EMAIL_FILE_PATH", str(BASE_DIR / ".mail"))  # noqa: F405
 CELERY_TASK_ALWAYS_EAGER = True
 
 INTERNAL_IPS = ["127.0.0.1", "localhost"]
+
+# An LMS on this machine (a test double, a Moodle in Docker) may register and
+# launch over plain http from 127.0.0.1. Development only: this setting is
+# not read by the production settings, where an LMS's addresses are held to
+# https and public hosts like any other a site gives.
+LTI_ALLOW_LOCAL_PLATFORMS = env_bool("LTI_ALLOW_LOCAL_PLATFORMS", False)  # noqa: F405

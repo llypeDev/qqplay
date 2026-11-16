@@ -124,6 +124,7 @@
          {% if awaiting %}data-awaiting{% endif %}
          data-sprite="{% static 'icons/sprite.svg' %}"
          {% if frame_lang %}data-lang="{{ frame_lang }}"{% endif %}
+         {% if handoff %}data-handoff="{{ handoff }}"{% endif %}
          data-title="{% if named %}{{ live.title }}{% endif %}">
       <script type="application/json" data-live-state>{{ state_json|safe }}</script>
       {% if layout != "chat" %}

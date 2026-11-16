@@ -323,6 +323,7 @@ def embed(request, uid: str):
     finally:
         request.user = viewer
     language = language_from(request.GET.get("lang"))
+    handoff = getattr(request, "lti_handoff", None)
     context = {
         "live": live,
         "available": available or awaiting,
@@ -333,14 +334,17 @@ def embed(request, uid: str):
         "theme": theme,
         "integration": integration,
         "frame_lang": language or "",
+        # Someone an LMS signed in (apps.integrations.lti): their session.
+        "handoff": json.dumps(handoff) if handoff else "",
         "state": page_state,
         "state_json": page_json,
         "page_url": request.build_absolute_uri(live.get_absolute_url()),
     }
     with translation.override(language) if language else contextlib.nullcontext():
         response = render(request, "live/embed.html", context, status=200 if available or awaiting else 404)
-    # A school's frame shows only on the school's sites.
-    return allow_framing(response, integration)
+    # A school's frame shows only on the school's sites; one an LMS launched
+    # shows in that LMS, which signed the launch.
+    return allow_framing(response, None if handoff else integration)
 
 
 @require_GET
