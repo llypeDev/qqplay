@@ -394,7 +394,8 @@ class FramingTests(Base):
 
     def test_the_script(self):
         body = self.client.get(reverse("integrations:sdk")).content.decode()
-        for needed in ("MutationObserver", "data-school", "qqplay:status", 'code: "frame"', "retryToken"):
+        for needed in ("MutationObserver", "data-school", "qqplay:status", 'code: "frame"', "retryToken",
+                       "self.answered"):
             self.assertIn(needed, body)
         # A live loads at once; lazily only when the site asks for it.
         self.assertIn('if (this.lazy) frame.setAttribute("loading", "lazy");', body)

@@ -47,7 +47,7 @@ from django.utils.translation import gettext as _
 from apps.live.models import parse_groups
 
 from . import net
-from .models import LtiKey, LtiPlatform
+from .models import EVERY_CLASS, LtiKey, LtiPlatform
 from .tokens import Person
 
 CLAIM = "https://purl.imsglobal.org/spec/lti/claim/"
@@ -307,7 +307,9 @@ def person(launch: Launch) -> Person:
     picture = str(claims.get("picture") or "").strip()[:1000]
     context = launch.claim("context") if isinstance(launch.claim("context"), dict) else {}
     # The course is the class: by its short name, and by its id.
-    classes = parse_groups([context.get("label") or "", context.get("id") or ""])
+    # (A course named "*" is a course named "*", not every class.)
+    classes = [name for name in parse_groups([context.get("label") or "", context.get("id") or ""])
+               if name != EVERY_CLASS]
     return Person(
         integration=launch.platform.integration,
         external_id=f"lti:{launch.platform.pk}:{claims['sub']}"[:200],

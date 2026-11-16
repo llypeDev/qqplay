@@ -2,7 +2,7 @@ from django.urls import path
 
 from apps.live import views as live_views
 
-from . import api, hooks, lti_views, media_api, views
+from . import api, hooks, lti_views, media_api, views, wordpress
 from .sessions import embed_api
 
 app_name = "integrations"
@@ -46,6 +46,7 @@ urlpatterns = [
         name="media_comment_hide",
     ),
     # the school's server (api.py)
+    path("api/integrations/v1/", api.about, name="api_about"),
     path("api/integrations/v1/lives/", api.lives, name="api_lives"),
     path("api/integrations/v1/lives/<str:uid>/", api.live_detail, name="api_live"),
     path("api/integrations/v1/lives/<str:uid>/end/", api.live_end, name="api_live_end"),
@@ -56,6 +57,8 @@ urlpatterns = [
     # purchases posted by the sales platforms (hooks.py)
     path("api/integrations/hooks/<str:key>/<str:secret>/", hooks.receive, name="purchase_hook"),
     # launched from inside an LMS (LTI 1.3: lti.py)
+    path("plugins/wordpress/qqplay.zip", wordpress.download, name="wordpress_plugin"),
+
     path("lti/login/", lti_views.login, name="lti_login"),
     path("lti/launch/", lti_views.launch, name="lti_launch"),
     path("lti/jwks/", lti_views.jwks, name="lti_jwks"),

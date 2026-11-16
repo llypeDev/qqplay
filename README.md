@@ -128,6 +128,7 @@ os recursos de terceiros estão listados em [Licenças](#licenças).
         <li>Capítulos e prévias na barra de progresso</li>
         <li>Comentários com respostas, fixados em momentos do vídeo, e a lista "A seguir"</li>
         <li>Página de embed com tempo inicial, autoplay, título e controles</li>
+        <li>oEmbed: sites que conhecem o portal (o WordPress com o plugin, serviços como o Iframely) transformam o endereço de um vídeo ou de uma live no player</li>
       </ul>
     </td>
   </tr>
@@ -139,6 +140,7 @@ os recursos de terceiros estão listados em [Licenças](#licenças).
         <li>Chat com reações, perguntas com votos, mensagem fixada, modo lento e selo Streaming para a equipe</li>
         <li>A gravação publicada como vídeo quando a live termina, e a presença de cada aluno</li>
         <li>A live, o chat e os vídeos com comentários dentro do site da sua escola, com o login, as turmas e a cara da escola, mais API e webhooks (<a href="#integração-com-a-sua-escola">veja como</a>)</li>
+        <li>Plugin de WordPress, baixado do próprio portal: shortcode para cada live e vídeo, alunos identificados pelo login do site e cursos do LearnDash, Tutor LMS e LifterLMS como turmas (<a href="#wordpress">veja como</a>)</li>
         <li>Ou como atividade de um curso no Moodle, Canvas e outros LMS, pelo padrão LTI 1.3: o aluno chega identificado pelo LMS (<a href="#moodle-canvas-e-outros-lms-lti-13">veja como</a>)</li>
         <li>Para quem vende por Hotmart, Kiwify, Memberkit e parecidas: lista de matrículas alimentada pelos webhooks de compra, login por código no e-mail e link da aula</li>
       </ul>
@@ -653,7 +655,7 @@ com um aluno de teste.
    | `exp` | obrigatório | validade; no máximo 24 h à frente (10 min é o bastante) |
    | `picture` | opcional | foto do aluno, só `https`; vira o avatar dele |
    | `moderator` | opcional | `true` para professores (veja as ferramentas abaixo) |
-   | `groups` | opcional | as turmas do aluno, ex. `["3A", "3B"]` |
+   | `groups` | opcional | as turmas do aluno, ex. `["3A", "3B"]`; `["*"]` vale por todas (para professores e equipe) |
    | `email` | opcional | só para referência no Admin |
 
 2. **Na página da aula**, cole:
@@ -666,7 +668,9 @@ com um aluno de teste.
    `data-layout` é `both` (live e chat), `player` ou `chat`; `data-theme` é
    `dark` ou `light`. Em aulas longas, use `data-token-url="/qqplay-token"` no
    lugar de `data-token`: um endereço do site que responde `{"token": "…"}`
-   para o aluno logado, chamado de novo quando a sessão do quadro termina.
+   para o aluno logado (`{"token": ""}`, 401 ou 403 para um visitante),
+   chamado de novo quando a sessão do quadro termina. Como o token não fica
+   escrito na página, ela pode ser guardada por um cache.
    Pelo script, `QQplay.mount(elemento, {live, layout, token, tokenUrl})`.
 
    Em sites que trocam de página sem recarregar (React, Vue, Next), o elemento
@@ -778,6 +782,71 @@ na Kiwify, os nomes dos campos do comprador não aparecem na documentação
 (vieram das entregas de teste; confira com o botão de teste dela); na Cademí,
 o e-mail só vem quando o webhook está com `payload_detail` em `full`.
 
+### WordPress
+
+Para sites em WordPress há um plugin, sem nada para programar. Ele é baixado
+da página da integração (painel *Em um site WordPress*), então é sempre o da
+versão do seu portal.
+
+1. No WordPress, *Plugins › Adicionar novo › Enviar plugin*, escolha o arquivo
+   e ative.
+2. Em *Configurações › QQplay*, preencha o **endereço do portal** e a
+   **chave** e o **segredo** da integração. A página diz se conectou, avisa se
+   o endereço do site falta na lista de sites da integração e lista as lives e
+   os vídeos com o shortcode de cada um.
+3. Cole o shortcode em uma página ou aula:
+
+   ```
+   [qqplay_live id="ID_DA_LIVE"]                    a live com o chat
+   [qqplay_video id="ID_DO_VIDEO"]                  o vídeo com os comentários
+   [qqplay_live id="ID_DA_LIVE" layout="player"]    só o player (ou "chat")
+   [qqplay url="https://SEU_PORTAL/live/ID/"]       pelo endereço
+   ```
+
+   O endereço de uma live ou de um vídeo colado sozinho em uma linha faz o
+   mesmo: a live vem com o chat, o vídeo só com o player. No editor, a prévia
+   vem do oEmbed do portal.
+
+O que o plugin decide por você:
+
+- **Quem é a pessoa:** quem está logado no WordPress entra com o nome, o
+  e-mail e a foto de lá (a do Gravatar ou de um plugin de avatar; sem foto,
+  ficam as iniciais). Visitantes assistem ao que é público, sem escrever.
+- **Turmas:** os cursos em que o aluno está matriculado no **LearnDash**, no
+  **Tutor LMS** ou no **LifterLMS** (e os grupos e assinaturas deles) viram as
+  turmas dele, pelo final do endereço do curso (`matematica-1`). A página de
+  configurações lista as turmas para copiar nas turmas de uma live.
+- **Quem modera:** os papéis marcados em *Quem modera* (administradores,
+  editores e os professores dos plugins de curso, a princípio). Eles ficam em
+  todas as turmas, então nunca são barrados em uma live do próprio site.
+- **Cache:** o token não vai escrito na página: ela o pede quando abre, em um
+  endereço que nenhum cache guarda. Um plugin de cache nunca entrega a
+  identidade de uma pessoa a outra.
+- **Segredo:** fica só no servidor. Para tirá-lo também do banco de dados,
+  defina `QQPLAY_SECRET` (e, se quiser, `QQPLAY_PORTAL` e `QQPLAY_KEY`) no
+  `wp-config.php`.
+
+Os filtros `qqplay_user_classes`, `qqplay_user_is_teacher` e
+`qqplay_token_claims` trocam essas regras pelas do seu site (turmas por nível
+de assinatura, por exemplo).
+
+O que foi testado e o que não: em um **WordPress 7.1 de verdade**, com
+**Tutor LMS 4.2** e **LifterLMS 11** instalados, o plugin baixado do portal foi
+instalado, configurado e usado por uma aluna, um aluno sem matrícula, um
+editor e um visitante (veja o teste em [Testes](#testes)). O **LearnDash** é
+pago e não foi testado: as funções dele que o plugin chama são as da
+documentação pública. Plugins de cache também não foram testados; a proteção
+é o token nunca estar na página. Outros plugins de curso (MasterStudy,
+LearnPress, Sensei) ficam sem turmas até um filtro dizer quais são.
+
+**oEmbed, sem o plugin.** O portal responde em `/oembed/?url=…` (JSON e XML)
+com o player de qualquer vídeo ou live que o link sozinho abre, e as páginas
+anunciam esse endereço, que é como serviços do tipo do Iframely descobrem o
+player a partir do link (com eles não foi testado). O WordPress sem o plugin
+não segue o anúncio: ele só incorpora sozinho os sites de uma lista própria.
+O oEmbed não leva identidade, então o chat e os comentários ficam só para
+leitura.
+
 ### Moodle, Canvas e outros LMS (LTI 1.3)
 
 A escola que usa um LMS (Moodle, Canvas, Blackboard, Brightspace, Schoology,
@@ -848,6 +917,7 @@ lives e os vídeos dele e sobre os alunos daquela integração.
 
 | | Endereço (`/api/integrations/v1/…`) | |
 | --- | --- | --- |
+| `GET` | *(a raiz)* | a própria integração: nome, chave e sites listados (é o que o plugin de WordPress usa para dizer "conectado") |
 | `GET` | `lives/` | as lives, da mais nova; `?status=live` filtra |
 | `POST` | `lives/` | agenda uma live: `title`, `description`, `scheduled_for` (ISO 8601 com fuso), `visibility` (privada por padrão), `classes`, `chat`, `record`; a resposta traz o servidor e a chave para o OBS |
 | `GET` `PATCH` `DELETE` | `lives/<id>/` | lê, altera ou exclui (não no ar) |
@@ -1046,6 +1116,35 @@ pelo Caddy, pelo serviço `events` e pelo PostgreSQL.
 
 </details>
 
+<details>
+<summary><b>Teste de ponta a ponta do plugin de WordPress</b> · 28 verificações</summary>
+
+<br>
+
+`tools/e2e/wordpress.mjs` roda contra um WordPress de verdade com o plugin
+ativo. Ele cria a integração no estúdio e as lives pela API, preenche as
+configurações do plugin, cria as próprias páginas e confere: a conexão e os
+shortcodes na página de configurações, a prévia do editor vinda do oEmbed, o
+token de cada pessoa (nome, turmas, validade, sem cache e fora da página),
+uma aluna matriculada conversando na live privada do curso e comentando um
+vídeo, um aluno sem matrícula barrado, um editor moderando, um visitante que
+não vê a live privada (e o site consultado uma única vez) e os endereços
+colados virando a live e o player. No fim, apaga o que criou.
+
+O cabeçalho do arquivo traz os comandos para subir um WordPress de teste em
+Docker; `tools/e2e/wordpress-seed.php` (com `wp eval-file`) cria as pessoas e
+os cursos. O WordPress só busca o oEmbed em endereços nas portas 80, 443 ou
+8080, por isso o portal roda na 8080 neste teste (pare o servidor de ingestão
+das lives, que usa essa porta em desenvolvimento; o teste não transmite nada).
+
+```bash
+python manage.py runserver 127.0.0.1:8080 &
+BASE_URL=http://127.0.0.1:8080 WP_URL=http://127.0.0.1 \
+E2E_WP_ADMIN=admin E2E_WP_ADMIN_PASSWORD=… node tools/e2e/wordpress.mjs
+```
+
+</details>
+
 ### Idiomas
 
 A interface abre em português do Brasil por padrão e também está disponível em
@@ -1076,6 +1175,17 @@ GNU gettext, por exemplo `apt install gettext`), traduza as entradas novas em
 python manage.py makemessages -l pt_BR --ignore=.venv --ignore="static/vendor/*"
 python manage.py makemessages -d djangojs -l pt_BR --ignore=.venv --ignore="static/vendor/*"
 python manage.py compilemessages -l pt_BR --ignore=.venv
+```
+
+O plugin de WordPress tem o próprio catálogo, em `wordpress/qqplay/languages/`:
+
+```bash
+cd wordpress/qqplay
+xgettext --language=PHP --from-code=UTF-8 --no-location --add-comments=translators: \
+  --keyword=__ --keyword=_e --keyword=esc_html__ --keyword=esc_html_e --keyword=esc_attr__ \
+  -o languages/qqplay.pot qqplay.php includes/*.php
+msgmerge --update languages/qqplay-pt_BR.po languages/qqplay.pot
+msgfmt -o languages/qqplay-pt_BR.mo languages/qqplay-pt_BR.po
 ```
 
 </details>
@@ -1131,8 +1241,10 @@ apps/
                         e a gravação publicada como vídeo
   integrations/         lives e chat no site de uma escola: token assinado pelo
                         site, sessão do quadro, script de incorporação,
-                        matrículas com código por e-mail, webhooks de compra
-                        e a ferramenta LTI 1.3 para Moodle, Canvas e outros
+                        matrículas com código por e-mail, webhooks de compra,
+                        a ferramenta LTI 1.3 para Moodle, Canvas e outros e
+                        a entrega do plugin de WordPress
+wordpress/qqplay/       o plugin de WordPress, que o portal entrega em .zip
 docker/live/            servidor de ingestão das lives (nginx + módulo RTMP)
 docker-compose.prod.yml a stack para a internet: Caddy com HTTPS, workers
                         ajustados para dois núcleos
@@ -1154,6 +1266,8 @@ tools/build_logo.py     regenera o kit da marca, as fontes e o sprite de ícones
 tools/build_avatars.py  regenera os personagens do perfil
 tools/e2e/smoke.mjs     teste de ponta a ponta no navegador
 tools/e2e/live.mjs      teste de ponta a ponta das lives
+tools/e2e/integration.mjs  teste de ponta a ponta da integração com escolas
+tools/e2e/wordpress.mjs teste do plugin contra um WordPress de verdade
 ```
 
 </details>

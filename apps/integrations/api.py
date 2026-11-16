@@ -5,6 +5,7 @@ token the site makes for its students (tokens.py), with ``"scope": "api"``
 instead of a person, valid for an hour at most. It acts for the integration's
 owner, on the owner's lives and videos and on the integration's people only.
 
+    GET    /api/integrations/v1/                          the integration itself
     GET    /api/integrations/v1/lives/                    the lives, newest first
     POST   /api/integrations/v1/lives/                    schedule one
     GET    /api/integrations/v1/lives/<id>/               one, with its stream key
@@ -21,6 +22,7 @@ from __future__ import annotations
 import json
 from functools import wraps
 
+from django.conf import settings
 from django.db.models import Q
 from django.http import JsonResponse
 from django.utils import timezone
@@ -116,6 +118,23 @@ def _apply(live: Live, data: dict) -> str:
     if "record" in data:
         live.record = bool(data["record"])
     return ""
+
+
+@server_api
+def about(request, integration):
+    """Which integration the token speaks for, and the sites it lists: what a
+    plugin shows to say "connected", or to say which address is missing."""
+    if request.method != "GET":
+        return _error(_("Not allowed."), 405)
+    return JsonResponse({
+        "portal": settings.PORTAL_NAME,
+        "integration": {
+            "name": integration.name,
+            "key": integration.key,
+            "sites": integration.origin_list,
+            "email_login": integration.email_login,
+        },
+    })
 
 
 @server_api

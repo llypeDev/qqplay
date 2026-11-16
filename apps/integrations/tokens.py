@@ -11,7 +11,8 @@ integration's page in the studio). Header and claims:
       "email": "ana@escola.com.br",         # optional, for the admins' reference
       "picture": "https://.../ana.jpg",     # optional, https only
       "moderator": true,                    # optional: may hide chat messages
-      "groups": ["turma-a"],                # optional: the person's classes
+      "groups": ["turma-a"],                # optional: the person's classes;
+                                            # ["*"] is every class (teachers)
       "iat": 1767225600,
       "exp": 1767226200                     # required, at most a day ahead
     }

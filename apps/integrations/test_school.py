@@ -60,6 +60,21 @@ class ClassTests(IntegrationTestCase):
         teacher = self.session(sub="t1", name="Prof. Rui", moderator=True, groups=["turma-a"])
         self.assertEqual(self.api("live_hide", message["id"], session=teacher, method="post").status_code, 200)
 
+    def test_staff_in_every_class(self):
+        # A site that cannot list its teachers' classes puts them in all.
+        student = self.session(groups=["turma-a"])
+        message = self.api("live_chat", session=student, method="post", data={"body": "?"}).json()["message"]
+        staff = self.session(sub="t3", name="Coordenação", moderator=True, groups=["*"])
+        self.assertEqual(self.api("live_state", session=staff).status_code, 200)
+        self.assertEqual(self.api("live_hide", message["id"], session=staff, method="post").status_code, 200)
+        person = ExternalIdentity.objects.get(external_id="t3")
+        with translation.override("en"):
+            self.assertEqual((person.groups, person.class_names), (["*"], ["every class"]))
+        # It opens classes, and gives nothing else: without "moderator" it only watches.
+        watcher = self.session(sub="t4", groups=["*"])
+        self.assertEqual(self.api("live_state", session=watcher).status_code, 200)
+        self.assertEqual(self.api("live_hide", message["id"], session=watcher, method="post").status_code, 403)
+
     def test_the_recording_keeps_the_classes(self):
         media = Media.objects.create(owner=self.owner, title="Aula 1", state=Media.State.READY,
                                      visibility=Media.Visibility.PRIVATE, file="media/x/rec.mp4")
@@ -506,3 +521,49 @@ class StreamTests(IntegrationTestCase):
         # three times as often.
         self.assertLess(len(calls), 10)
         self.assertEqual(stream.hub.entries, {})
+
+
+class AboutApiTests(IntegrationTestCase):
+    """What a plugin asks to say "connected"."""
+
+    def about(self, token):
+        return self.client.get(reverse("integrations:api_about"), headers={"Authorization": f"Bearer {token}"})
+
+    def test_the_integration_describes_itself_to_its_own_server(self):
+        token = tokens.sign({"scope": "api", "exp": int(time.time()) + 300}, self.integration)
+        data = self.about(token).json()
+        self.assertEqual(data["integration"], {"name": "Escola Virtual", "key": self.integration.key,
+                                               "sites": [SITE], "email_login": False})
+        self.assertNotIn(self.integration.secret, json.dumps(data))
+        self.assertEqual(self.client.post(reverse("integrations:api_about"),
+                                          headers={"Authorization": f"Bearer {token}"}).status_code, 405)
+
+    def test_only_with_an_api_token(self):
+        self.assertEqual(self.about("nope").status_code, 401)
+        self.assertEqual(self.about(self.token()).status_code, 401)  # a person's token is not the server's
+
+
+class WordPressPluginTests(IntegrationTestCase):
+    def test_the_portal_hands_out_the_plugin_as_wordpress_installs_it(self):
+        import io
+        import zipfile
+
+        response = self.client.get(reverse("integrations:wordpress_plugin"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertIn('filename="qqplay.zip"', response["Content-Disposition"])
+        names = zipfile.ZipFile(io.BytesIO(response.content)).namelist()
+        # One folder with the plugin's main file in it, and nothing hidden.
+        self.assertTrue(all(name.startswith("qqplay/") for name in names), names)
+        for needed in ("qqplay/qqplay.php", "qqplay/includes/token.php", "qqplay/includes/embed.php",
+                       "qqplay/readme.txt", "qqplay/uninstall.php"):
+            self.assertIn(needed, names)
+        self.assertFalse([name for name in names if name.endswith((".po", ".pot")) or "/." in name], names)
+        # The same source makes the same file.
+        self.assertEqual(self.client.get(reverse("integrations:wordpress_plugin")).content, response.content)
+
+    def test_the_integrations_page_offers_it(self):
+        self.client.force_login(self.owner)
+        page = self.client.get(reverse("integrations:detail", args=[self.integration.pk]))
+        self.assertContains(page, reverse("integrations:wordpress_plugin"))
+        self.assertContains(page, 'id="portal-origin" readonly value="http://testserver"')

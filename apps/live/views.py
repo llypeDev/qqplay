@@ -24,12 +24,12 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone, translation
 from django.utils.dateparse import parse_datetime
-from django.utils.html import escape
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_GET, require_POST
 
-from apps.core.embedding import allow_framing, language_from
+from apps.core import oembed
+from apps.core.embedding import allow_framing, iframe_html, language_from
 from apps.core.embedding import missing as embed_missing
 from apps.core.templatetags.akon import avatar
 from apps.media import access
@@ -224,11 +224,7 @@ def _page_state(request, live: Live) -> tuple[dict, str]:
 
 
 def _embed_snippet(live: Live, embed_url: str) -> str:
-    return (
-        f'<iframe src="{escape(embed_url)}" width="640" height="360" frameborder="0" '
-        f'allow="autoplay; fullscreen; picture-in-picture" allowfullscreen '
-        f'title="{escape(live.title)}"></iframe>'
-    )
+    return iframe_html(embed_url, live.title)
 
 
 def _int(value, default: int = 0) -> int:
@@ -267,6 +263,7 @@ def watch(request, uid: str):
             "page_url": request.build_absolute_uri(live.get_absolute_url()),
             "embed_url": embed_url,
             "embed_snippet": _embed_snippet(live, embed_url),
+            "oembed_links": oembed.discovery(request, "live", live),
             "can_edit": access.can_edit_live(request.user, live),
         },
     )

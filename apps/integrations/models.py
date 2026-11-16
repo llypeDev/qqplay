@@ -29,6 +29,16 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 
+#: Among a person's classes: every class there is. A site gives it to its
+#: teachers and staff, who open the lives of all of them.
+EVERY_CLASS = "*"
+
+
+def class_names(groups) -> list[str]:
+    """A person's classes as a page shows them."""
+    return [str(_("every class")) if name == EVERY_CLASS else name for name in groups or []]
+
+
 def new_key() -> str:
     return "sch_" + secrets.token_hex(8)
 
@@ -249,9 +259,16 @@ class ExternalIdentity(models.Model):
     def __str__(self) -> str:
         return f"{self.name or self.external_id} ({self.integration})"
 
+    @property
+    def class_names(self) -> list[str]:
+        return class_names(self.groups)
+
     def in_groups(self, groups) -> bool:
-        """Belongs to one of these classes (no classes: any person does)."""
-        return not groups or bool(set(groups) & set(self.groups or []))
+        """Belongs to one of these classes. No classes: any person does. And
+        someone the site puts in every class ("*", for teachers and staff)
+        always does."""
+        mine = set(self.groups or [])
+        return not groups or EVERY_CLASS in mine or bool(set(groups) & mine)
 
 
 class WebhookDelivery(models.Model):
@@ -323,6 +340,10 @@ class Enrolment(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["integration", "email"], name="one_enrolment_per_email_per_site")
         ]
+
+    @property
+    def class_names(self) -> list[str]:
+        return class_names(self.groups)
 
     def __str__(self) -> str:
         return f"{self.email} @ {self.integration}"
