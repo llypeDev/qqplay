@@ -6,6 +6,7 @@ import contextlib
 from django.conf import settings
 from django.shortcuts import render
 from django.utils import translation
+from django.utils.html import escape
 from django.utils.translation import gettext as _
 from django.views.i18n import JavaScriptCatalog
 
@@ -25,6 +26,17 @@ def language_from(value) -> str | None:
         if code.split("-")[0] == base:
             return code
     return None
+
+
+def iframe_html(src: str, title: str, width: int = 640, height: int = 360) -> str:
+    """The code someone pastes into their own site to show a player. The
+    title is whatever a creator typed: it is escaped, so it cannot close the
+    attribute and add others to a page that is not ours."""
+    return (
+        f'<iframe src="{escape(src)}" width="{int(width)}" height="{int(height)}" frameborder="0" '
+        f'allow="autoplay; fullscreen; picture-in-picture" allowfullscreen '
+        f'title="{escape(title)}"></iframe>'
+    )
 
 
 def allow_framing(response, integration=None):

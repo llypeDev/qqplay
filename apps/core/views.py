@@ -23,7 +23,8 @@ from django.utils.translation import gettext_lazy
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 
-from apps.core.embedding import allow_framing, language_from
+from apps.core import oembed
+from apps.core.embedding import allow_framing, iframe_html, language_from
 from apps.core.embedding import missing as embed_missing
 from apps.live.models import Live
 from apps.media import access, pipeline
@@ -317,11 +318,7 @@ def media_detail(request, uid: str):
 
     page_url = request.build_absolute_uri(reverse("core:media", args=[media.uid]))
     embed_url = request.build_absolute_uri(reverse("core:embed", args=[media.uid]))
-    embed_snippet = (
-        f'<iframe src="{embed_url}" width="640" height="360" frameborder="0" '
-        f'allow="autoplay; fullscreen; picture-in-picture" allowfullscreen '
-        f'title="{media.title}"></iframe>'
-    )
+    embed_snippet = iframe_html(embed_url, media.title)
     renditions = []
     if media.hls_playlist:
         renditions = [f"{height}p" for height, _ in pipeline.plan_renditions(media.width, media.height)]
@@ -349,6 +346,7 @@ def media_detail(request, uid: str):
             "page_url": page_url,
             "embed_url": embed_url,
             "embed_snippet": embed_snippet,
+            "oembed_links": oembed.discovery(request, "media", media),
             "renditions": renditions,
             "extension": extension,
             "owner_uploads": access.listed_media().filter(owner=media.owner_id).count(),

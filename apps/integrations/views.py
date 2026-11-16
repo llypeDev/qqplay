@@ -29,7 +29,7 @@ from apps.core.templatetags.akon import avatar
 from apps.live.models import Live
 from apps.rbac import permissions as policy
 
-from . import diagnostics, enrolments, hooks, identities, login, lti, sessions, tokens, webhooks
+from . import diagnostics, enrolments, hooks, identities, login, lti, sessions, tokens, webhooks, wordpress
 from .models import Enrolment, Integration, LtiPlatform, WebhookDelivery, new_hook_secret, normalize_origin
 
 #: Sign-ins one address may attempt per minute.
@@ -420,6 +420,8 @@ def studio_detail(request, pk):
             "people_found": people_found,
             "people_more": shown + PEOPLE_PAGE if people_found > shown else 0,
             "search": search,
+            "portal_origin": _origin_of(request),
+            "wordpress_version": wordpress.version(),
             "lms": list(integration.lti_platforms.all()),
             "lti_urls": lti.tool_urls(request),
             "lti_register_url": request.build_absolute_uri(

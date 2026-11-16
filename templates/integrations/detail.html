@@ -243,7 +243,7 @@ def qqplay_token(student):
               <li{% if not person.is_active %} class="is-off"{% endif %}>
                 <span class="enrol-who">
                   <strong>{{ person.email }}</strong>
-                  <span class="person-meta">{{ person.name|default:"—" }}{% if person.groups %} · {{ person.groups|join:", " }}{% endif %}{% if person.source %} · {{ person.source }}{% endif %}</span>
+                  <span class="person-meta">{{ person.name|default:"—" }}{% if person.groups %} · {{ person.class_names|join:", " }}{% endif %}{% if person.source %} · {{ person.source }}{% endif %}</span>
                 </span>
                 {% if person.is_moderator %}<span class="badge badge-role">{% translate "Moderator" %}</span>{% endif %}
                 {% if not person.is_active %}<span class="badge badge-failed">{% translate "No access" %}</span>{% endif %}
@@ -268,6 +268,27 @@ def qqplay_token(student):
         {% else %}
           <p class="muted small">{% translate "Nobody is enrolled yet." %}</p>
         {% endif %}
+      </section>
+
+      {# ---------------------------------------------------------- wordpress #}
+      <section class="panel" id="wordpress">
+        <div class="panel-head">
+          <h2><span class="panel-title-icon">{% icon "layers" %}</span>{% translate "On a WordPress site" %}</h2>
+          <span class="muted">{% translate "plugin" %}{% if wordpress_version %} {{ wordpress_version }}{% endif %}</span>
+        </div>
+        <p class="muted">{% blocktranslate %}Nothing to program: the plugin signs people in with their WordPress login, makes the courses of LearnDash, Tutor LMS and LifterLMS their classes, and gives a shortcode for each live and video. A live's address pasted into a lesson works too.{% endblocktranslate %}</p>
+        <ol class="steps mt-3">
+          <li>{% translate "Download the plugin and install it in WordPress: Plugins › Add New › Upload Plugin." %}</li>
+          <li>{% translate "In Settings › QQplay, fill in this portal's address and this integration's key and secret." %}</li>
+          <li>{% translate "Copy the shortcode of a live or a video from that page into a page or a lesson." %}</li>
+        </ol>
+        <div class="copy-field" style="margin-top: 12px">
+          <input class="input mono" id="portal-origin" readonly value="{{ portal_origin }}" aria-label="{% translate 'Portal address' %}">
+          <button type="button" class="btn" data-copy-target="#portal-origin" data-copied="{% translate 'Address copied' %}">{% icon "copy" "icon-sm" %}{% translate "Copy" %}</button>
+        </div>
+        <div class="form-actions" style="margin-top: 12px">
+          <a class="btn btn-primary btn-sm" href="{% url 'integrations:wordpress_plugin' %}" download>{% icon "download" "icon-sm" %}{% translate "Download the plugin" %}</a>
+        </div>
       </section>
 
       {# ---------------------------------------------------------------- lms #}
@@ -357,7 +378,7 @@ def qqplay_token(student):
               <li{% if person.is_blocked %} class="is-blocked"{% endif %}>
                 <span class="user-cell">{% avatar person.user "sm" %}<span>
                   <strong>{{ person.name }}</strong>{% if person.is_moderator %} <span class="badge badge-role">{% translate "Moderator" %}</span>{% endif %}{% if person.is_blocked %} <span class="badge badge-failed">{% translate "Blocked" %}</span>{% endif %}
-                  <span class="person-meta"><span class="mono" title="{% translate 'Id on the site' %}">{{ person.external_id|truncatechars:24 }}</span>{% if person.groups %} · <span title="{% translate 'Classes' %}">{{ person.groups|join:", " }}</span>{% endif %}{% if person.last_seen_at %} · <time title="{% translate 'Last seen' %}" datetime="{{ person.last_seen_at|date:'c' }}" data-local>{{ person.last_seen_at|date:"SHORT_DATETIME_FORMAT" }}</time>{% endif %}</span>
+                  <span class="person-meta"><span class="mono" title="{% translate 'Id on the site' %}">{{ person.external_id|truncatechars:24 }}</span>{% if person.groups %} · <span title="{% translate 'Classes' %}">{{ person.class_names|join:", " }}</span>{% endif %}{% if person.last_seen_at %} · <time title="{% translate 'Last seen' %}" datetime="{{ person.last_seen_at|date:'c' }}" data-local>{{ person.last_seen_at|date:"SHORT_DATETIME_FORMAT" }}</time>{% endif %}</span>
                 </span></span>
                 <div class="person-actions">
                   <form method="post" action="{% url 'integrations:person' integration.pk person.pk %}">

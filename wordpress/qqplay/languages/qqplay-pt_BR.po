@@ -1,0 +1,189 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: QQplay 1.0.0\n"
+"Language: pt_BR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid ""
+"Lives with chat and videos with comments from your QQplay portal inside "
+"WordPress, with your students already signed in by the site."
+msgstr ""
+"Lives com chat e vídeos com comentários do seu portal QQplay dentro do "
+"WordPress, com os alunos já identificados pelo login do site."
+
+msgid "The portal's address does not look like one: it starts with https://."
+msgstr "O endereço do portal não parece um endereço: ele começa com https://."
+
+msgid "Settings"
+msgstr "Configurações"
+
+msgid "The answer could not be read: is this the address of a QQplay portal?"
+msgstr ""
+"Não foi possível ler a resposta: este é o endereço de um portal QQplay?"
+
+msgid ""
+"Fill in the portal's address and the integration's key and secret, and save."
+msgstr ""
+"Preencha o endereço do portal e a chave e o segredo da integração, e salve."
+
+msgid ""
+"Without the secret, lives and videos show but nobody is signed in: the chat "
+"and the comments can only be read."
+msgstr ""
+"Sem o segredo, as lives e os vídeos aparecem, mas ninguém entra "
+"identificado: o chat e os comentários ficam só para leitura."
+
+msgid "Not connected."
+msgstr "Sem conexão."
+
+#. translators: 1: the integration's name, 2: the portal's name
+msgid "Connected to the integration \"%1$s\" on %2$s."
+msgstr "Conectado à integração \"%1$s\" no %2$s."
+
+msgid ""
+"This site is not in the integration's list of sites, so its pages cannot "
+"sign people in yet. On the portal, in the integration, add this address to "
+"the sites:"
+msgstr ""
+"Este site não está na lista de sites da integração, então as páginas dele "
+"ainda não conseguem identificar as pessoas. No portal, na integração, "
+"acrescente este endereço aos sites:"
+
+msgid "Lives"
+msgstr "Lives"
+
+msgid "No lives yet: schedule one in the portal's studio."
+msgstr "Nenhuma live ainda: agende uma no estúdio do portal."
+
+msgid "Scheduled"
+msgstr "Agendada"
+
+msgid "On air"
+msgstr "No ar"
+
+msgid "Interrupted"
+msgstr "Interrompida"
+
+msgid "Ended"
+msgstr "Encerrada"
+
+msgid "Title"
+msgstr "Título"
+
+msgid "State"
+msgstr "Situação"
+
+msgid "Classes"
+msgstr "Turmas"
+
+msgid "Shortcode"
+msgstr "Shortcode"
+
+msgid "Videos"
+msgstr "Vídeos"
+
+msgid "No videos yet: upload one in the portal."
+msgstr "Nenhum vídeo ainda: envie um no portal."
+
+msgid ""
+"Paste the shortcode in a page, a lesson or a post. Add layout=\"player\" to "
+"show only the player."
+msgstr ""
+"Cole o shortcode em uma página, uma aula ou um post. Acrescente "
+"layout=\"player\" para mostrar só o player."
+
+msgid ""
+"With LearnDash, Tutor LMS or LifterLMS, the courses a student is enrolled in"
+" become their classes. Without them, every signed-in person is in no class, "
+"and private lives are open to all of them. The qqplay_user_classes filter "
+"says otherwise."
+msgstr ""
+"Com LearnDash, Tutor LMS ou LifterLMS, os cursos em que o aluno está "
+"matriculado viram as turmas dele. Sem eles, quem está logado não tem turma, "
+"e as lives privadas ficam abertas a todos os logados. O filtro "
+"qqplay_user_classes muda isso."
+
+msgid ""
+"A student's classes are the courses they are enrolled in. To keep a live for"
+" one course, write the class below in the live's classes on the portal."
+msgstr ""
+"As turmas de um aluno são os cursos em que ele está matriculado. Para deixar"
+" uma live só para um curso, escreva a turma abaixo nas turmas da live, no "
+"portal."
+
+msgid "No published courses yet."
+msgstr "Nenhum curso publicado ainda."
+
+msgid "Course"
+msgstr "Curso"
+
+msgid "Class"
+msgstr "Turma"
+
+msgid ""
+"Lives with chat and videos with comments from your QQplay portal, with the "
+"people of this site already signed in."
+msgstr ""
+"Lives com chat e vídeos com comentários do seu portal QQplay, com as pessoas"
+" deste site já identificadas."
+
+msgid "Connection"
+msgstr "Conexão"
+
+msgid ""
+"The three are on the integration's page, in the portal's studio (Studio › "
+"Integrations)."
+msgstr ""
+"Os três estão na página da integração, no estúdio do portal (Estúdio › "
+"Integrações)."
+
+msgid "Portal address"
+msgstr "Endereço do portal"
+
+msgid "Key"
+msgstr "Chave"
+
+msgid "Secret"
+msgstr "Segredo"
+
+msgid "saved: leave empty to keep it"
+msgstr "salvo: deixe vazio para manter"
+
+msgid ""
+"It stays on this server and signs each person's entry. To keep it out of the"
+" database, define QQPLAY_SECRET in wp-config.php."
+msgstr ""
+"Ele fica neste servidor e assina a entrada de cada pessoa. Para mantê-lo "
+"fora do banco de dados, defina QQPLAY_SECRET no wp-config.php."
+
+msgid "Who moderates"
+msgstr "Quem modera"
+
+msgid ""
+"People with these roles can hide messages, answer questions and pin a "
+"message in the chat, and open the lives of every class."
+msgstr ""
+"As pessoas com estes papéis podem ocultar mensagens, responder perguntas e "
+"fixar uma mensagem no chat, e abrem as lives de todas as turmas."
+
+msgid "Defined in wp-config.php."
+msgstr "Definido no wp-config.php."
+
+msgid "Open the settings"
+msgstr "Abrir as configurações"
+
+msgid "tell the plugin your portal's address and the integration's key."
+msgstr "informe ao plugin o endereço do seu portal e a chave da integração."
+
+msgid "without the integration's secret, people watch but are not signed in."
+msgstr ""
+"sem o segredo da integração, as pessoas assistem, mas não entram "
+"identificadas."
+
+msgid "this shortcode needs the id or the address of a live or a video."
+msgstr ""
+"este shortcode precisa do id ou do endereço de uma live ou de um vídeo."

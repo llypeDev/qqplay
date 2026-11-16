@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import manage_views, playlist_views, studio_views, subtitle_views, views
+from . import manage_views, oembed, playlist_views, studio_views, subtitle_views, views
 
 app_name = "core"
 
@@ -12,6 +12,7 @@ urlpatterns = [
     path("view/<str:uid>/reprocess/", studio_views.media_reprocess, name="media_reprocess"),
     path("view/<str:uid>/playlists/", views.add_to_playlist, name="add_to_playlist"),
     path("embed/<str:uid>/", views.embed, name="embed"),
+    path("oembed/", oembed.oembed, name="oembed"),
     path("search/", views.search, name="search"),
     path("upload/", views.upload, name="upload"),
     path("channel/<uuid:user_id>/", views.channel, name="channel"),

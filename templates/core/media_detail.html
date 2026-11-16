@@ -33,6 +33,8 @@
 
 {% block extra_head %}
   <link rel="stylesheet" href="{% static 'css/player.css' %}">
+  {% for link in oembed_links %}<link rel="alternate" type="{{ link.type }}" href="{{ link.href }}" title="{{ media.title }}">
+  {% endfor %}
 {% endblock %}
 
 {% block content %}

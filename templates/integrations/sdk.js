@@ -10,8 +10,9 @@
  *                    default), player, or chat (the comments, for a video)
  * data-token         the token your server signs for the person signed in
  * data-token-url     or an address on your site that answers {"token": "..."}
- *                    for the person signed in; the script asks it again when
- *                    a session runs out, so long classes need nothing else
+ *                    for the person signed in ({"token": ""}, 401 or 403 for
+ *                    a visitor); the script asks it again when a session
+ *                    runs out, so long classes need nothing else
  * data-school        your integration's key (sch_...). Only needed when the
  *                    token comes later (QQplay.setToken) or does not name the
  *                    integration in its header (kid)
@@ -121,7 +122,8 @@
         if (!self.alive) return;
         self.build();
         // The site's address for tokens did not answer: try it again shortly.
-        if (!token) self.retryToken(1);
+        // "No one is signed in" is an answer, and is not asked again.
+        if (!token && !self.answered) self.retryToken(1);
       });
     }
   }
@@ -133,13 +135,26 @@
   Widget.prototype.fetchToken = function () {
     var self = this;
     if (!this.tokenUrl) return Promise.resolve("");
+    // Whether the site said something about who is there: a token, an empty
+    // one, or a refusal (401, 403) for a visitor. An error or an answer that
+    // cannot be read says nothing.
+    this.answered = false;
     return fetch(this.tokenUrl, { credentials: "include", headers: { Accept: "application/json" } })
-      .then(function (response) { return response.ok ? response.json() : {}; })
+      .then(function (response) {
+        var refused = response.status === 401 || response.status === 403;
+        return (response.ok ? response.json() : Promise.resolve({})).then(function (data) {
+          self.answered = response.ok || refused;
+          return data;
+        });
+      })
       .then(function (data) {
         self.token = (data && data.token) || "";
         return self.token;
       })
-      .catch(function () { return ""; });
+      .catch(function () {
+        self.answered = false;
+        return "";
+      });
   };
 
   Widget.prototype.retryToken = function (attempt) {
@@ -149,7 +164,7 @@
       if (!self.alive || self.token) return;
       self.fetchToken().then(function (token) {
         if (token) self.setToken(token);
-        else self.retryToken(attempt + 1);
+        else if (!self.answered) self.retryToken(attempt + 1);
       });
     }, attempt * 4000);
   };

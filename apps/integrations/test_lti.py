@@ -242,6 +242,13 @@ class LaunchTests(Base):
         self.assertEqual(len([call for call in self.fetched if call[1] == self.platform.jwks_url]), 2)
 
 
+class ClassTests(Base):
+    def test_a_course_named_with_a_star_is_not_every_class(self):
+        launch = lti.Launch(platform=LtiPlatform(pk=7, integration=self.integration), claims={
+            "sub": "u1", "name": "Ana", CLAIM + "context": {"id": "*", "label": "MAT1"}})
+        self.assertEqual(lti.person(launch).groups, ["mat1"])
+
+
 class RoleTests(Base):
     """Who the chat treats as a teacher of the course the launch came from."""
 
